@@ -10,6 +10,7 @@ import { terminal, type Task, type TaskInput } from './types.js';
 
 interface Job {
   task: Task;
+  admitted: boolean;
   worker?: Worker;
   done: Promise<void>;
   writes: Promise<void>;
@@ -27,6 +28,7 @@ export class TaskManager {
   async init(): Promise<void> { await this.store.init(); }
 
   private save(job: Job): Promise<void> {
+    if (!job.admitted) return job.writes;
     // A single failed write must not poison every later attempt to record cleanup.
     job.writes = job.writes.catch(() => {}).then(() => this.store.save(job.task));
     void job.writes.catch((error) => {
@@ -78,7 +80,7 @@ export class TaskManager {
     if (this.storageFailure) throw new Error('SeekWing task storage is unavailable. Restore storage and restart this MCP before starting another task. ' + this.storageFailure);
     // Reserve capacity before any asynchronous persistence so concurrent MCP calls cannot oversubscribe.
     if (this.jobs.size >= this.config.maxConcurrent) throw new Error('SeekWing concurrency limit reached. Wait for an active task to finish.');
-    const job: Job = { task, done: Promise.resolve(), writes: Promise.resolve(), permissions: new Map() };
+    const job: Job = { task, admitted: !input.idempotencyKey, done: Promise.resolve(), writes: Promise.resolve(), permissions: new Map() };
     this.jobs.set(runId, job);
     let release: (() => Promise<void>) | undefined;
     try {
@@ -86,9 +88,10 @@ export class TaskManager {
         const claimed = await this.store.claimKey(input.idempotencyKey, submission, runId);
         if (claimed !== runId) {
           this.jobs.delete(runId);
-          // A previous claim with no durable run is deliberately not replayed.
-          return await this.get(claimed).catch(() => { throw new Error(`Idempotent task ${claimed} has uncertain admission. Inspect state; do not automatically resubmit.`); });
+          // This caller did not admit a task. Keep lookup rejection outside the creator's failure handler.
+          return this.get(claimed).catch(() => { throw new Error(`Idempotent task ${claimed} has uncertain admission. Inspect state; do not automatically resubmit.`); });
         }
+        job.admitted = true;
       }
       if (parent?.sessionId) release = await this.store.lockSession(parent.sessionId, runId);
       await this.save(job);
@@ -99,6 +102,7 @@ export class TaskManager {
       return this.snapshot(task);
     } catch (error) {
       if (job.forceTimer) clearTimeout(job.forceTimer);
+      if (!job.admitted) { this.jobs.delete(runId); throw error; }
       await release?.().catch((cleanup) => { task.cleanupError = this.config.redact(String(cleanup)); });
       task.status = 'failed';
       task.error ??= this.config.redact(String(error));
@@ -140,7 +144,7 @@ export class TaskManager {
     const saved = await this.store.list(limit).catch((error) => { if (!this.unpersisted.size) throw error; return []; });
     const tasks = new Map(saved.map(task => [task.runId, task]));
     for (const task of this.unpersisted.values()) tasks.set(task.runId, task);
-    for (const job of this.jobs.values()) tasks.set(job.task.runId, this.liveSnapshot(job));
+    for (const job of this.jobs.values()) if (job.admitted) tasks.set(job.task.runId, this.liveSnapshot(job));
     return [...tasks.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit).map(task => this.snapshot(task));
   }
 

@@ -189,3 +189,127 @@ test('a failed final write never exposes premature completion and recovery permi
   const next = await manager.start({ workspace: f.workspace, instruction: 'HELLO', permissionMode: 'read-only', timeoutSeconds: 60 });
   assert.equal((await manager.wait(next.runId, 3)).status, 'completed');
 });
+
+test('cross-process controls stay invisible until a complete message is published', async t => {
+  const { config } = await fixture(t);
+  const store = new Store(config);
+  await store.init();
+  const runId = 'sw-' + randomUUID();
+  const dir = path.join(config.stateDir, 'controls');
+  const originalWrite = fs.writeFile;
+  let opened;
+  const entered = new Promise(resolve => { opened = resolve; });
+  let resume;
+  const barrier = new Promise(resolve => { resume = resolve; });
+  fs.writeFile = async (file, data, options) => {
+    if (path.dirname(file) !== dir) return originalWrite(file, data, options);
+    const handle = await fs.open(file, options.flag, options.mode);
+    try { opened(); await barrier; await handle.writeFile(data); }
+    finally { await handle.close(); }
+  };
+  syncBuiltinESMExports();
+  const writing = store.writeControl(runId, { action: 'cancel' });
+  try {
+    await entered;
+    assert.deepEqual(await store.takeControls(runId), [], 'The owner must not parse an incompletely written control');
+  } finally {
+    resume();
+    await writing;
+    fs.writeFile = originalWrite;
+    syncBuiltinESMExports();
+  }
+  assert.deepEqual(await store.takeControls(runId), [{ action: 'cancel' }]);
+  assert.deepEqual(await store.takeControls(runId), []);
+  assert.deepEqual(await fs.readdir(dir), []);
+});
+
+test('a lost idempotency claim never creates a phantom failed task', async t => {
+  const f = await fixture(t);
+  const manager = new TaskManager(f.config);
+  await manager.init();
+  t.after(() => manager.shutdown());
+  const contender = new Store(f.config);
+  const winner = 'sw-' + randomUUID();
+  const claim = manager.store.claimKey.bind(manager.store);
+  // Another process wins after our initial lookup, but has not yet persisted its task record.
+  manager.store.claimKey = async (key, input, candidate) => {
+    assert.equal(await contender.claimKey(key, input, winner), winner);
+    return claim(key, input, candidate);
+  };
+  await assert.rejects(manager.start({ workspace: f.workspace, instruction: 'HELLO', permissionMode: 'read-only', timeoutSeconds: 60, idempotencyKey: 'simultaneous' }), /uncertain admission/);
+  assert.deepEqual(await manager.list(10), [], 'The losing request did not admit a task of its own');
+  assert.deepEqual(await fs.readdir(path.join(f.config.stateDir, 'runs')), []);
+  assert.equal(manager.jobs.size, 0);
+});
+
+test('a concurrent idempotency input conflict leaves no extra run record', async t => {
+  const f = await fixture(t);
+  const manager = new TaskManager(f.config);
+  await manager.init();
+  t.after(() => manager.shutdown());
+  const contender = new Store(f.config);
+  const claim = manager.store.claimKey.bind(manager.store);
+  manager.store.claimKey = async (key, input, candidate) => {
+    await contender.claimKey(key, { different: true }, 'sw-' + randomUUID());
+    return claim(key, input, candidate);
+  };
+  await assert.rejects(manager.start({ workspace: f.workspace, instruction: 'HELLO', permissionMode: 'read-only', timeoutSeconds: 60, idempotencyKey: 'conflicting-inputs' }), /already used with different task inputs/);
+  assert.deepEqual(await manager.list(10), []);
+  assert.equal(manager.jobs.size, 0);
+});
+
+test('failed control publication removes partial data and never delivers a command', async t => {
+  const { config } = await fixture(t);
+  const store = new Store(config);
+  await store.init();
+  const runId = 'sw-' + randomUUID();
+  const dir = path.join(config.stateDir, 'controls');
+  const original = fs.writeFile;
+  fs.writeFile = async (file, data, options) => {
+    if (path.dirname(file) !== dir) return original(file, data, options);
+    await original(file, '{', options);
+    throw new Error('fixture control write failure');
+  };
+  syncBuiltinESMExports();
+  try { await assert.rejects(store.writeControl(runId, { action: 'cancel' }), /fixture control write failure/); }
+  finally { fs.writeFile = original; syncBuiltinESMExports(); }
+  assert.deepEqual(await store.takeControls(runId), []);
+  assert.deepEqual(await fs.readdir(dir), []);
+});
+
+test('nested native JSON evidence redacts known escaped credentials without corrupting content', async t => {
+  const f = await fixture(t);
+  const secret = 'fixture-"quoted"\\credential\n123456789';
+  const config = await loadConfig({ ...f.config.env, TEST_API_KEY: secret });
+  const evidence = { rawOutput: JSON.stringify({ credential: secret, path: 'C:\\project\\file.txt' }) };
+  const result = JSON.parse(config.redact(JSON.stringify(evidence)));
+  assert.deepEqual(JSON.parse(result.rawOutput), { credential: '[REDACTED]', path: 'C:\\project\\file.txt' });
+  assert.equal(config.redact(secret), '[REDACTED]');
+});
+
+test('history listing bounds concurrent reads and still returns the newest complete records', async t => {
+  const f = await fixture(t);
+  const store = new Store(f.config);
+  await store.init();
+  const ids = [];
+  for (let i = 0; i < 24; i++) {
+    const runId = 'sw-' + randomUUID();
+    ids.push(runId);
+    await store.save({ schemaVersion: 1, runId, ownerPid: process.pid, status: 'completed',
+      createdAt: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(), output: 'fixture evidence' });
+  }
+  await fs.writeFile(store.runPath('sw-' + randomUUID()), '{', { mode: 0o600 });
+  const get = store.get.bind(store);
+  let active = 0;
+  let peak = 0;
+  let reads = 0;
+  store.get = async runId => {
+    reads++; active++; peak = Math.max(peak, active);
+    try { await delay(5); return await get(runId); }
+    finally { active--; }
+  };
+  const recent = await store.list(5);
+  assert.deepEqual(recent.map(task => task.runId), ids.slice(-5).reverse());
+  assert.equal(reads, 25, 'All candidates must be considered, including a damaged record');
+  assert.ok(peak <= 8, `History lookup opened ${peak} records concurrently`);
+});

@@ -40,8 +40,15 @@ export class Store {
   }
   async list(limit: number): Promise<Task[]> {
     const files = (await readdir(path.join(this.config.stateDir, 'runs'))).filter((name) => /^sw-[0-9a-f-]{36}\.json$/.test(name));
-    const tasks = await Promise.all(files.map((name) => this.get(name.slice(0, -5)).catch(() => undefined)));
-    return tasks.filter((task): task is Task => !!task).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit);
+    const recent: Task[] = [];
+    // History has no expiry: bound both open reads and the full evidence retained in memory.
+    for (let offset = 0; offset < files.length; offset += 8) {
+      const batch = await Promise.all(files.slice(offset, offset + 8).map(name => this.get(name.slice(0, -5)).catch(() => undefined)));
+      recent.push(...batch.filter((task): task is Task => !!task));
+      recent.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      recent.splice(limit);
+    }
+    return recent;
   }
   async claimKey(key: string, input: unknown, runId: string): Promise<string> {
     const target = path.join(this.config.stateDir, 'keys', digest(key) + '.json');
@@ -111,7 +118,11 @@ export class Store {
   async writeControl(runId: string, control: unknown): Promise<void> {
     this.runPath(runId);
     const file = path.join(this.config.stateDir, 'controls', `${runId}-${randomUUID()}.json`);
-    await writeFile(file, this.config.redact(JSON.stringify(control)), { flag: 'wx', mode: 0o600 });
+    const temp = file + '.tmp';
+    try {
+      await writeFile(temp, this.config.redact(JSON.stringify(control)), { flag: 'wx', mode: 0o600 });
+      await rename(temp, file);
+    } finally { await unlink(temp).catch(() => {}); }
   }
   async takeControls(runId: string): Promise<unknown[]> {
     const dir = path.join(this.config.stateDir, 'controls');

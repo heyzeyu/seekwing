@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
-export const VERSION = '0.2.2';
+export const VERSION = '0.2.3';
 export type PermissionMode = 'read-only' | 'workspace-write';
 export type SessionMode = 'background' | 'desktop';
 export interface Config {
@@ -24,9 +24,15 @@ export interface Config {
 }
 
 export function redactor(env: NodeJS.ProcessEnv): (value: string) => string {
-  const secrets = Object.entries(env)
+  const values = Object.entries(env)
     .filter(([key, value]) => /(?:TOKEN|SECRET|PASSWORD|API_KEY|AUTHORIZATION|COOKIE)/i.test(key) && value && value.length >= 8)
-    .map(([, value]) => value!).sort((a, b) => b.length - a.length);
+    .map(([, value]) => value!);
+  // Cover raw strings, serialized task records and native tool evidence embedded as JSON text.
+  const secrets = [...new Set(values.flatMap(value => {
+    const variants = [value];
+    for (let i = 0; i < 2; i++) { value = JSON.stringify(value).slice(1, -1); variants.push(value); }
+    return variants;
+  }))].sort((a, b) => b.length - a.length);
   return (value) => {
     for (const secret of secrets) value = value.split(secret).join('[REDACTED]');
     return value.replace(/\b(?:sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+\/-]{12,})\b/gi, '[REDACTED]');

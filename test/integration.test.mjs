@@ -70,6 +70,20 @@ test('doctor surfaces native startup warnings while redacting credentials', asyn
   assert.ok(!JSON.stringify(diagnostic).includes('fake-sensitive-value'));
 });
 
+test('quoted multiline credentials are redacted from protocol responses and stored evidence', async t => {
+  const secret = 'fixture-"quoted"\\credential\n123456789';
+  const c = await setup(t, { TEST_API_KEY: secret, SEEKWING_FIXTURE_WARNING: '1' });
+  const diagnostic = await c.call('doctor');
+  assert.match(diagnostic.warnings[0], /\[REDACTED\]/);
+  const run = await c.call('start_task', { workspace: c.workspace, instruction: 'HELLO' });
+  const result = await finished(c, run.runId);
+  assert.equal(result.status, 'completed');
+  assert.ok(!result.output.includes(secret), 'A JSON-escaped environment credential must not be exposed by MCP');
+  assert.match(result.output, /\[REDACTED\]/);
+  const raw = await readFile(path.join(c.state, 'runs', run.runId + '.json'), 'utf8');
+  assert.ok(!raw.includes(JSON.stringify(secret).slice(1, -1)), 'The task record must not retain the escaped credential');
+});
+
 test('concurrent diagnostics cannot remove another handshake configuration', async t => {
   const c = await setup(t, { SEEKWING_FIXTURE_DOCTOR_RACE: '1' });
   const results = await Promise.all([c.call('doctor'), c.call('doctor')]);
@@ -127,6 +141,25 @@ test('cancel, cross-process control, and serialization of session follow-ups', a
   const busy = await c.call('reply_task', { runId: first.runId, instruction: 'OTHER' }, { allowError: true });
   assert.equal(busy.isError, true);
   assert.equal((await c.call('cancel_task', { runId: a.runId })).status, 'cancelled');
+});
+
+test('a second MCP process can reject a pending permission without replaying it', async t => {
+  const owner = await setup(t);
+  const task = await owner.call('start_task', { workspace: owner.workspace, instruction: 'PERMISSION' });
+  const pending = await owner.call('wait_task', { runId: task.runId, seconds: 10 });
+  assert.equal(pending.status, 'needs_attention');
+  const observer = await connect(owner.state);
+  try {
+    const permission = pending.pendingPermissions[0];
+    await observer.call('respond_to_permission', { runId: task.runId, permissionId: permission.id, optionId: 'no' });
+    const result = await finished(owner, task.runId);
+    assert.equal(result.status, 'completed');
+    assert.match(result.output, /"optionId":"no"/);
+    assert.equal(result.pendingPermissions.length, 0);
+    assert.equal(result.permissionDecisions.length, 1);
+    const duplicate = await observer.call('respond_to_permission', { runId: task.runId, permissionId: permission.id, optionId: 'no' }, { allowError: true });
+    assert.equal(duplicate.isError, true);
+  } finally { await observer.close(); }
 });
 
 test('an idempotent retry works when the worker concurrency limit is full', async (t) => {

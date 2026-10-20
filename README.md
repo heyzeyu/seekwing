@@ -8,7 +8,7 @@
 
 SeekWing lets Codex assign scoped work to DeepSeek Harness, wait for results, continue the same session with corrections, and independently check files and tests. **Seek** comes from DeepSeek; **Wing** is your coding wingman.
 
-**v0.2.2 completes an overall review:** stale-lock recovery, persistence failures, safe companion file replacement, custom endpoint paths, concurrent diagnostics and shutdown admission. [Review record](docs/final-review.zh-CN.md) · [Earlier source comparison](docs/reference-review.zh-CN.md).
+**v0.2.3 adds another review pass:** atomic cross-process controls, accurate concurrent idempotency records, escaped-credential redaction and bounded history reads. [Review record](docs/review-v023.zh-CN.md) · [Previous overall review](docs/final-review.zh-CN.md) · [Source comparison](docs/reference-review.zh-CN.md).
 
 Visible Desktop sessions were introduced in v0.2.0 alongside background ACP. Real generation, same-session follow-up and file edits have been verified on macOS with Harness Desktop **0.2.1-rc.2**, Node **24.12.0** and DeepSeek Flash / High. Windows and other Harness versions remain untested.
 
@@ -138,7 +138,9 @@ Default private state locations:
 | Linux | `$XDG_STATE_HOME/seekwing` or `~/.local/state/seekwing` |
 | Windows, untested | `%LOCALAPPDATA%/SeekWing` |
 
-The background Harness home is `<state>/harness`, separate from Desktop. Desktop mode uses the current Host's native storage. Bridge records are atomically written with private file permissions and contain task instructions and evidence. Known credential environment values and common bearer/key patterns are redacted, but arbitrary secrets in source files are not guaranteed to be recognized. Avoid unnecessarily delegating sensitive data. The bridge does not retain thought chunks; Harness retains its normal session history.
+The background Harness home is `<state>/harness`, separate from Desktop. Desktop mode uses the current Host's native storage. Bridge records are atomically written with private file permissions and contain task instructions and evidence. Known credential environment values, their common JSON-escaped forms in records and nested native tool evidence, and common bearer/key patterns are redacted. Arbitrary secrets in source files are not guaranteed to be recognized. Avoid unnecessarily delegating sensitive data. The bridge does not retain thought chunks; Harness retains its normal session history.
+
+Cross-process cancellation and permission controls are published as complete files; owners cannot consume a partially written message. Failed writes deliver no command. Concurrent retries keep the original `idempotencyKey`; losing or uncertain requests create no replacement task record and never automatically replay an instruction.
 
 Desktop HTTP bodies are capped at 512 KiB and decoded after byte assembly, preserving split UTF-8 and supported long prompts. Both backends reject incompatible protocol versions before sending instructions. Upgrade the companion with `desktop-install` and restart Harness for this release.
 
@@ -147,6 +149,8 @@ Task deadlines range from 10 to 3600 seconds. Background cancellation uses ACP a
 Evidence write failures cancel the affected turn and expose `persistenceError`; the task cannot report normal completion. Transient failures recover the write queue and persist the failure. If storage remains unavailable, this MCP retains failed results in memory and refuses new execution. Restore storage and restart that MCP. Unpersisted results cannot survive process exit; older records are treated as interrupted and instructions are never replayed automatically.
 
 Session locks are published atomically and stale-owner reclamation is serialized and revalidated. A crash during reclamation can leave a `.recovery` marker. Recovery then fails closed with its path; confirm the relevant process and native turn have stopped before inspecting and removing that marker. Never clear lock files while tasks are running.
+
+History listing reads at most eight records concurrently and retains only the requested newest records. It still scans history; it does not yet use a paginated index.
 
 ## Configuration
 
@@ -179,7 +183,7 @@ npm test
 npm pack --dry-run
 ```
 
-40 deterministic tests use an independent ACP wire fixture and native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation, deadlines, output caps, redaction, workspace-root validation and crash recovery. This release adds storage fault injection, concurrent stale-lock recovery, incomplete updates, custom discovery paths, concurrent diagnostics, shutdown races and withholding completion until final persistence settles. No provider credentials are needed.
+48 deterministic tests use an independent ACP wire fixture and native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation and permission rejection, deadlines, output caps, redaction, workspace-root validation and crash recovery. This release adds partial and failed control writes, idempotency contention, escaped credentials, nested native JSON and bounded history reads. No provider credentials are needed.
 
 The opt-in smoke test **calls DeepSeek and consumes normal provider usage**. It edits only its generated scratch workspace and independently reruns the example test:
 
