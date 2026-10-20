@@ -70,19 +70,43 @@ export class Store {
   async lockSession(sessionId: string, runId: string): Promise<() => Promise<void>> {
     const file = path.join(this.config.stateDir, 'locks', digest(sessionId) + '.json');
     const content = JSON.stringify({ ownerPid: process.pid, runId, token: randomUUID() });
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const handle = await open(file, 'wx', 0o600);
-        try { await handle.writeFile(content); } finally { await handle.close(); }
-        return async () => { if (await readFile(file, 'utf8').catch(() => '') === content) await unlink(file); };
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        const old = JSON.parse(await readFile(file, 'utf8'));
+    const temp = file + '.' + randomUUID() + '.tmp';
+    await writeFile(temp, content, { flag: 'wx', mode: 0o600 });
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          // Publish a complete record atomically; contenders never observe an empty owner file.
+          await link(temp, file);
+          return async () => {
+            const current = await readFile(file, 'utf8').catch((error) => { if (error.code !== 'ENOENT') throw error; return undefined; });
+            // Recovery only removes dead owners, so this live owner cannot be replaced during release.
+            if (current === content) await unlink(file);
+          };
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        }
+        const observed = await readFile(file, 'utf8').catch((error) => { if (error.code !== 'ENOENT') throw error; return undefined; });
+        if (observed === undefined) continue;
+        const old = JSON.parse(observed);
+        if (!Number.isSafeInteger(old.ownerPid) || old.ownerPid <= 0) throw new Error('Invalid session lock owner. Inspect the lock before recovery.');
         if (pidAlive(old.ownerPid)) throw new Error('This Harness session already has an active turn.');
-        await unlink(file).catch(() => {});
+        // Serialize reclamation and re-read after admission. A stale snapshot must never unlink a fresh owner.
+        const recoveryFile = file + '.recovery';
+        const guard = await open(recoveryFile, 'wx', 0o600).catch((error) => {
+          if (error.code === 'EEXIST') throw new Error(`Session lock recovery is already in progress. If its process exited, inspect ${recoveryFile} before removing that recovery marker.`);
+          throw error;
+        });
+        try {
+          await guard.writeFile(JSON.stringify({ ownerPid: process.pid, runId }));
+          const current = await readFile(file, 'utf8').catch((error) => { if (error.code !== 'ENOENT') throw error; return undefined; });
+          if (current === observed) await unlink(file);
+        } finally {
+          await guard.close();
+          await unlink(recoveryFile);
+        }
       }
-    }
-    throw new Error('Could not acquire the Harness session lock.');
+      throw new Error('Could not acquire the Harness session lock.');
+    } finally { await unlink(temp).catch(() => {}); }
   }
   async writeControl(runId: string, control: unknown): Promise<void> {
     this.runPath(runId);

@@ -104,7 +104,7 @@ export async function serve(config: Config): Promise<void> {
   server.registerTool('list_tasks', {
     description: 'List recent SeekWing runs from the local state directory, including interrupted runs after a server restart.',
     inputSchema: { limit: z.number().int().min(1).max(50).default(10) }, annotations: read,
-  }, ({ limit }) => result(async () => ({ tasks: (await manager.store.list(limit)).map((task) => ({ runId: task.runId, sessionId: task.sessionId, status: task.status,
+  }, ({ limit }) => result(async () => ({ tasks: (await manager.list(limit)).map((task) => ({ runId: task.runId, sessionId: task.sessionId, status: task.status,
     workspace: task.workspace, permissionMode: task.permissionMode, sessionMode: task.sessionMode ?? 'background', createdAt: task.createdAt, parentRunId: task.parentRunId })) })));
 
   let shuttingDown: Promise<void> | undefined;

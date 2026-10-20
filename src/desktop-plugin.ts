@@ -280,9 +280,11 @@ export function configOptions(selection: any) {
     { id: 'reasoning_effort', name: 'Reasoning effort', type: 'select', currentValue: selection.reasoningEffort ?? 'provider-default', options: [] }];
 }
 
-export async function startDesktopServer(ctx: NativeContext, stateDir: string) {
+export async function startDesktopServer(ctx: NativeContext, stateDir: string, endpointFile = path.join(stateDir, 'endpoint.json')) {
   await privateDir(stateDir);
   await chmod(stateDir, 0o700);
+  endpointFile = path.resolve(endpointFile);
+  await privateDir(path.dirname(endpointFile));
   const bridge = new DesktopBridge(ctx, stateDir);
   const token = randomBytes(32).toString('hex');
   const instanceId = randomUUID();
@@ -307,25 +309,29 @@ export async function startDesktopServer(ctx: NativeContext, stateDir: string) {
   });
   server.requestTimeout = 20_000;
   server.headersTimeout = 10_000;
-  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('No loopback port.');
-  expectedHost = `127.0.0.1:${address.port}`;
-  const endpointFile = path.join(stateDir, 'endpoint.json');
   const temporary = endpointFile + '.' + instanceId;
-  await writeFile(temporary, JSON.stringify({ schemaVersion: 1, version: VERSION, url: `http://${expectedHost}/seekwing`, token, instanceId, pid: process.pid }), { mode: 0o600 });
-  await rename(temporary, endpointFile);
-  return async () => {
+  let disposing: Promise<void> | undefined;
+  const dispose = () => disposing ??= (async () => {
     server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));
     await bridge.dispose();
+    await unlink(temporary).catch(() => {});
     const current = JSON.parse(await readFile(endpointFile, 'utf8').catch(() => '{}'));
     if (current.instanceId === instanceId) await unlink(endpointFile).catch(() => {});
-  };
+  })();
+  try {
+    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('No loopback port.');
+    expectedHost = `127.0.0.1:${address.port}`;
+    await writeFile(temporary, JSON.stringify({ schemaVersion: 1, version: VERSION, url: `http://${expectedHost}/seekwing`, token, instanceId, pid: process.pid }), { mode: 0o600, flag: 'wx' });
+    await rename(temporary, endpointFile);
+    return dispose;
+  } catch (error) { await dispose().catch(() => {}); throw error; }
 }
-export function apply(ctx: NativeContext, config: { stateDir?: string } = {}) {
+export function apply(ctx: NativeContext, config: { stateDir?: string; endpointFile?: string } = {}) {
   ctx.effect(async function* () {
-    const dispose = await startDesktopServer(ctx, path.resolve(config.stateDir ?? path.join(defaultStateDir(), 'desktop')));
+    const dispose = await startDesktopServer(ctx, path.resolve(config.stateDir ?? path.join(defaultStateDir(), 'desktop')), config.endpointFile);
     yield dispose;
   });
 }

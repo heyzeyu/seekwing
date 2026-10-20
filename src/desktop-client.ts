@@ -1,7 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { SessionNotification } from '@agentclientprotocol/sdk';
-import type { Config, PermissionMode } from './config.js';
+import { VERSION, type Config, type PermissionMode } from './config.js';
 import type { Update, Worker } from './worker.js';
 import { DESKTOP_PROTOCOL_VERSION } from './desktop-protocol.js';
 
@@ -99,6 +99,8 @@ export class DesktopWorker implements Worker {
 
 export async function desktopDoctor(config: Config) {
   const client = new DesktopClient(config);
-  return { ...(await client.connect()), endpointFile: config.desktopEndpoint,
+  const { version: companionVersion, ...hello } = await client.connect();
+  return { ...hello, version: VERSION, companionVersion, endpointFile: config.desktopEndpoint,
+    warnings: companionVersion === VERSION ? [] : ['The Desktop companion version differs from this MCP. Run desktop-install and restart DeepSeek Harness to load the same release.'],
     note: 'Desktop companion handshake verified. No prompt was sent; generation is not yet verified.' };
 }

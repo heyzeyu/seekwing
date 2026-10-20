@@ -3,11 +3,16 @@ import { createInterface } from 'node:readline';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
 const result = (id, result) => send({ id, result });
 const update = (sessionId, update) => send({ method: 'session/update', params: { sessionId, update } });
 const options = [{ id: 'model', name: 'Model', type: 'select', currentValue: '["deepseek-official","fake"]', options: [{ value: '["deepseek-official","fake"]', name: 'Fake' }] }];
+if (process.env.SEEKWING_FIXTURE_DOCTOR_RACE) {
+  try { await writeFile(path.join(process.env.DSH_HOME, 'doctor-started'), '', { flag: 'wx' }); }
+  catch (error) { if (error.code !== 'EEXIST') throw error; await delay(300); }
+}
 const patch = JSON.parse(await readFile(process.argv[process.argv.indexOf('--patch') + 1], 'utf8'));
 const permissionConfig = patch.find((entry) => entry.id === 'permission')?.config || {};
 // Model the upstream config boundary that caused a real activation failure:

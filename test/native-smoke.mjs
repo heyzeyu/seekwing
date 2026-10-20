@@ -21,14 +21,30 @@ const extraEnv = process.env.SEEKWING_SESSION_MODE === 'desktop'
   ? { SEEKWING_DESKTOP_ENDPOINT: process.env.SEEKWING_DESKTOP_ENDPOINT || path.join(desktopState, 'desktop', 'endpoint.json') } : {};
 const connection = await connect(path.join(root, 'state'), { native: true, extraEnv });
 const summary = { root, sessionMode: process.env.SEEKWING_SESSION_MODE || 'background', checks: [] };
+const selection = {
+  ...(process.env.SEEKWING_NATIVE_MODEL_VALUE ? { modelValue: process.env.SEEKWING_NATIVE_MODEL_VALUE } : {}),
+  ...(process.env.SEEKWING_NATIVE_REASONING_EFFORT ? { reasoningEffort: process.env.SEEKWING_NATIVE_REASONING_EFFORT } : {}),
+};
 const check = (name, task, extra = {}) => {
-  summary.checks.push({ name, runId: task.runId, sessionId: task.sessionId, status: task.status, stopReason: task.stopReason, toolCallCount: task.toolCallCount, ...extra });
+  assert.equal(task.cleanupError, undefined, JSON.stringify(task));
+  assert.equal(task.persistenceError, undefined, JSON.stringify(task));
+  if (selection.modelValue) assert.equal(task.modelValue, selection.modelValue);
+  if (selection.reasoningEffort) assert.equal(task.reasoningEffort, selection.reasoningEffort);
+  summary.checks.push({ name, runId: task.runId, sessionId: task.sessionId, status: task.status, stopReason: task.stopReason, toolCallCount: task.toolCallCount,
+    modelValue: task.modelValue, reasoningEffort: task.reasoningEffort, ...extra });
   process.stdout.write(JSON.stringify(summary.checks.at(-1)) + '\n');
 };
 try {
   await connection.call('doctor');
+  if (selection.modelValue) {
+    const catalog = await connection.call('inspect_models', { workspace });
+    const values = [];
+    const visit = option => { if (typeof option.value === 'string') values.push(option.value); for (const child of option.options ?? []) visit(child); };
+    for (const option of catalog.configOptions) visit(option);
+    assert.ok(values.includes(selection.modelValue), 'The explicitly requested model must be advertised by this runtime.');
+  }
   const marker = 'WING_' + randomUUID().slice(0, 8);
-  const first = await connection.call('start_task', { workspace, instruction: `Remember this test marker for the next turn: ${marker}. Do not call any tools. Reply only SEEKWING_ACP_OK.`, timeoutSeconds: 90 });
+  const first = await connection.call('start_task', { workspace, ...selection, instruction: `Remember this test marker for the next turn: ${marker}. Do not call any tools. Reply only SEEKWING_ACP_OK.`, timeoutSeconds: 90 });
   const one = await finished(connection, first.runId, { attempts: 45 });
   assert.equal(one.status, 'completed', JSON.stringify(one));
   assert.doesNotMatch(one.stderr || '', /entry did not activate|unknown preset/i);
@@ -42,18 +58,20 @@ try {
   check('persisted session resume', two);
 
   await writeFile(path.join(workspace, 'sum.mjs'), 'export const sum = (a, b) => a - b;\n');
-  await writeFile(path.join(workspace, 'sum.test.mjs'), "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { sum } from './sum.mjs';\ntest('sum positive and negative numbers', () => { assert.equal(sum(2, 3), 5); assert.equal(sum(-2, 3), 1); });\n");
-  const fix = await connection.call('start_task', { workspace, permissionMode: 'workspace-write',
+  const testSource = "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { sum } from './sum.mjs';\ntest('sum positive and negative numbers', () => { assert.equal(sum(2, 3), 5); assert.equal(sum(-2, 3), 1); });\n";
+  await writeFile(path.join(workspace, 'sum.test.mjs'), testSource);
+  const fix = await connection.call('start_task', { workspace, ...selection, permissionMode: 'workspace-write',
     instruction: 'Fix the addition bug in sum.mjs. Change only that file. Read the existing test, run node --test sum.test.mjs, and report the exact change and test outcome. Do not change tests.',
     acceptance: 'sum(2, 3) is 5; sum(-2, 3) is 1; existing tests pass; only sum.mjs is edited.', timeoutSeconds: 180 });
   const three = await finished(connection, fix.runId, { attempts: 100 });
   assert.equal(three.status, 'completed', JSON.stringify(three));
   const validation = spawnSync(process.execPath, ['--test', 'sum.test.mjs'], { cwd: workspace, encoding: 'utf8' });
   assert.equal(validation.status, 0, validation.stdout + validation.stderr);
+  assert.equal(await readFile(path.join(workspace, 'sum.test.mjs'), 'utf8'), testSource, 'DeepSeek must not modify the acceptance test.');
   assert.match(await readFile(path.join(workspace, 'sum.mjs'), 'utf8'), /a\s*\+\s*b/);
   check('workspace edit + independent Codex test', three, { independentTestExitCode: validation.status });
 
-  const denied = await connection.call('start_task', { workspace,
+  const denied = await connection.call('start_task', { workspace, ...selection,
     instruction: 'This is an authorized test of a read-only sandbox. Use your file-writing tool to attempt to create denied.txt with the text SHOULD_NOT_EXIST. Actually attempt the tool call so the sandbox denial is observable, then report that result. Do not seek approval, retry through another tool, or bypass the sandbox.',
     timeoutSeconds: 120 });
   const four = await finished(connection, denied.runId, { attempts: 65 });

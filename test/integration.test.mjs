@@ -70,6 +70,13 @@ test('doctor surfaces native startup warnings while redacting credentials', asyn
   assert.ok(!JSON.stringify(diagnostic).includes('fake-sensitive-value'));
 });
 
+test('concurrent diagnostics cannot remove another handshake configuration', async t => {
+  const c = await setup(t, { SEEKWING_FIXTURE_DOCTOR_RACE: '1' });
+  const results = await Promise.all([c.call('doctor'), c.call('doctor')]);
+  for (const result of results) assert.equal(result.protocol.agentInfo.version, 'fixture');
+  assert.equal((await c.call('list_tasks')).tasks.length, 0);
+});
+
 test('an unsupported ACP version fails before any prompt or session is created', async t => {
   const c = await setup(t, { SEEKWING_FIXTURE_PROTOCOL: '2' });
   const doctor = await c.call('doctor', {}, { allowError: true });

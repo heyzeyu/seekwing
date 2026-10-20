@@ -20,15 +20,37 @@ interface Job {
 export class TaskManager {
   readonly store: Store;
   private jobs = new Map<string, Job>();
+  private unpersisted = new Map<string, Task>();
+  private storageFailure?: string;
   private closed = false;
   constructor(readonly config: Config) { this.store = new Store(config); }
   async init(): Promise<void> { await this.store.init(); }
 
   private save(job: Job): Promise<void> {
-    job.writes = job.writes.then(() => this.store.save(job.task));
-    // A persistence failure cancels execution rather than leaving an untracked background task.
-    void job.writes.catch(() => { void job.worker?.cancel(); });
+    // A single failed write must not poison every later attempt to record cleanup.
+    job.writes = job.writes.catch(() => {}).then(() => this.store.save(job.task));
+    void job.writes.catch((error) => {
+      if (job.task.persistenceError) return;
+      job.task.persistenceError = this.config.redact(String(error));
+      this.storageFailure ??= job.task.persistenceError;
+      job.task.error = 'Task evidence could not be persisted. Inspect the execution result and workspace before continuing.';
+      if (!terminal(job.task.status)) void this.cancelJob(job, 'persistence').catch(() => {});
+    });
     return job.writes;
+  }
+
+  private async saveFinal(job: Job): Promise<void> {
+    try { await this.save(job); }
+    catch {
+      if (job.task.status !== 'interrupted') job.task.status = 'failed';
+      // One bounded retry records transient failures. Persistent loss remains visible in this process.
+      try { await this.save(job); }
+      catch {
+        this.storageFailure = job.task.persistenceError;
+        this.unpersisted.set(job.task.runId, this.snapshot(job.task));
+      }
+    }
+    if (!this.unpersisted.size && ![...this.jobs.values()].some(other => other !== job && other.task.persistenceError)) this.storageFailure = undefined;
   }
 
   async start(input: TaskInput, parent?: Task): Promise<Task> {
@@ -52,6 +74,8 @@ export class TaskManager {
       const existing = await this.store.findKey(input.idempotencyKey, submission);
       if (existing) return this.get(existing).catch(() => { throw new Error(`Idempotent task ${existing} has uncertain admission. Inspect state; do not automatically resubmit.`); });
     }
+    if (this.closed) throw new Error('SeekWing is shutting down.');
+    if (this.storageFailure) throw new Error('SeekWing task storage is unavailable. Restore storage and restart this MCP before starting another task. ' + this.storageFailure);
     // Reserve capacity before any asynchronous persistence so concurrent MCP calls cannot oversubscribe.
     if (this.jobs.size >= this.config.maxConcurrent) throw new Error('SeekWing concurrency limit reached. Wait for an active task to finish.');
     const job: Job = { task, done: Promise.resolve(), writes: Promise.resolve(), permissions: new Map() };
@@ -74,8 +98,12 @@ export class TaskManager {
       });
       return this.snapshot(task);
     } catch (error) {
-      this.jobs.delete(runId);
-      await release?.();
+      if (job.forceTimer) clearTimeout(job.forceTimer);
+      await release?.().catch((cleanup) => { task.cleanupError = this.config.redact(String(cleanup)); });
+      task.status = 'failed';
+      task.error ??= this.config.redact(String(error));
+      task.finishedAt = new Date().toISOString();
+      try { await this.saveFinal(job); } finally { this.jobs.delete(runId); }
       throw error;
     }
   }
@@ -94,9 +122,26 @@ export class TaskManager {
     return JSON.parse(this.config.redact(JSON.stringify(task)));
   }
 
+  private liveSnapshot(job: Job): Task {
+    const task = this.snapshot(job.task);
+    // The durable terminal write can still fail. Do not publish success before finalization settles.
+    if (terminal(task.status)) task.status = task.cancellation ? 'cancelling' : 'running';
+    return task;
+  }
+
   async get(runId: string): Promise<Task> {
     const job = this.jobs.get(runId);
-    return job ? this.snapshot(job.task) : this.store.get(runId);
+    if (job) return this.liveSnapshot(job);
+    const task = this.unpersisted.get(runId);
+    return task ? this.snapshot(task) : this.store.get(runId);
+  }
+
+  async list(limit: number): Promise<Task[]> {
+    const saved = await this.store.list(limit).catch((error) => { if (!this.unpersisted.size) throw error; return []; });
+    const tasks = new Map(saved.map(task => [task.runId, task]));
+    for (const task of this.unpersisted.values()) tasks.set(task.runId, task);
+    for (const job of this.jobs.values()) tasks.set(job.task.runId, this.liveSnapshot(job));
+    return [...tasks.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit).map(task => this.snapshot(task));
   }
 
   async wait(runId: string, seconds: number): Promise<Task> {
@@ -183,17 +228,16 @@ export class TaskManager {
     if (update.sessionUpdate !== 'agent_thought_chunk') void this.save(job).catch(() => {});
   }
 
-  private async cancelJob(job: Job, reason: 'user' | 'timeout' | 'shutdown'): Promise<void> {
+  private async cancelJob(job: Job, reason: NonNullable<Task['cancellation']>): Promise<void> {
     if (terminal(job.task.status) || job.task.cancellation) return;
     job.task.cancellation = reason;
     job.task.status = 'cancelling';
     for (const resolve of job.permissions.values()) resolve({ outcome: { outcome: 'cancelled' } });
     job.permissions.clear();
     job.task.pendingPermissions = [];
-    await this.save(job);
-    if (terminal(job.task.status)) return;
+    // Install the stop deadline and send cancellation even when persistence itself is broken.
     job.forceTimer = setTimeout(() => { void job.worker?.stop().catch(() => {}); }, this.config.cancelGraceMs);
-    await job.worker?.cancel();
+    await Promise.all([this.save(job), job.worker?.cancel()]);
   }
 
   private async execute(job: Job, release?: () => Promise<void>): Promise<void> {
@@ -262,6 +306,7 @@ export class TaskManager {
           task.cleanupError = worker.cleanupWarning;
           if (outcome === 'completed') outcome = 'incomplete';
         }
+        if (task.persistenceError) outcome = 'failed';
       } catch (error) {
         outcome = 'interrupted';
         task.cleanupError = this.config.redact(String(error));
@@ -270,7 +315,7 @@ export class TaskManager {
       await release?.().catch((error) => { task.cleanupError = String(error); outcome = 'interrupted'; });
       task.status = outcome;
       task.finishedAt = new Date().toISOString();
-      try { await this.save(job); } finally { this.jobs.delete(task.runId); }
+      try { await this.saveFinal(job); } finally { this.jobs.delete(task.runId); }
     }
   }
 

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
@@ -152,7 +153,7 @@ export class AcpWorker {
 export async function doctor(config: Config) {
   // Plugin upgrades can remove the running server's original working directory.
   // Diagnostics need no project files, so use the stable, private state root.
-  const worker = new AcpWorker(config, 'doctor-' + process.pid, config.stateDir, 'read-only', () => {}, async () => ({ outcome: { outcome: 'cancelled' } }));
+  const worker = new AcpWorker(config, 'doctor-' + randomUUID(), config.stateDir, 'read-only', () => {}, async () => ({ outcome: { outcome: 'cancelled' } }));
   try {
     const protocol = await worker.start();
     await worker.stop();

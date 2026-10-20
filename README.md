@@ -8,7 +8,7 @@
 
 SeekWing lets Codex assign scoped work to DeepSeek Harness, wait for results, continue the same session with corrections, and independently check files and tests. **Seek** comes from DeepSeek; **Wing** is your coding wingman.
 
-**v0.2.1 hardens both modes:** cancellation during admission, lost-response cleanup, manual-turn ownership, split UTF-8, long Chinese prompts and protocol checks. [Source comparison and review](docs/reference-review.zh-CN.md).
+**v0.2.2 completes an overall review:** stale-lock recovery, persistence failures, safe companion file replacement, custom endpoint paths, concurrent diagnostics and shutdown admission. [Review record](docs/final-review.zh-CN.md) · [Earlier source comparison](docs/reference-review.zh-CN.md).
 
 Visible Desktop sessions were introduced in v0.2.0 alongside background ACP. Real generation, same-session follow-up and file edits have been verified on macOS with Harness Desktop **0.2.1-rc.2**, Node **24.12.0** and DeepSeek Flash / High. Windows and other Harness versions remain untested.
 
@@ -52,7 +52,7 @@ On macOS, SeekWing prefers the real Desktop CLI:
 
 Otherwise it finds `dsh` on `PATH`. Set `SEEKWING_DSH_COMMAND` to an absolute executable path for another installation. The executable must identify itself as the official Harness ACP agent. SeekWing never downloads or executes a package through `npx` automatically.
 
-`doctor` verifies the ACP handshake, without calling a model. It does not validate credentials or prove generation works. For an end-to-end check, delegate a small read-only task and wait for its result.
+`doctor` verifies the configured mode's handshake without calling a model. It does not validate credentials or prove generation works. For an end-to-end check, delegate a small read-only task and wait for its result. Desktop diagnostics report the MCP `version` and running `companionVersion` separately, with an upgrade/restart warning when they differ.
 
 ## Enable Desktop mode
 
@@ -144,6 +144,10 @@ Desktop HTTP bodies are capped at 512 KiB and decoded after byte assembly, prese
 
 Task deadlines range from 10 to 3600 seconds. Background cancellation uses ACP and then its owned process group if needed. Desktop uses native session cancellation and never kills the Host; uncertain cleanup is reported. Terminal status follows cleanup. Concurrency is limited per MCP server, with an additional eight-run limit in the Desktop Host; session locks are shared by servers using the same state directory. History has no automatic expiry; stop related tasks before removing state.
 
+Evidence write failures cancel the affected turn and expose `persistenceError`; the task cannot report normal completion. Transient failures recover the write queue and persist the failure. If storage remains unavailable, this MCP retains failed results in memory and refuses new execution. Restore storage and restart that MCP. Unpersisted results cannot survive process exit; older records are treated as interrupted and instructions are never replayed automatically.
+
+Session locks are published atomically and stale-owner reclamation is serialized and revalidated. A crash during reclamation can leave a `.recovery` marker. Recovery then fails closed with its path; confirm the relevant process and native turn have stopped before inspecting and removing that marker. Never clear lock files while tasks are running.
+
 ## Configuration
 
 | Variable | Default / purpose |
@@ -152,7 +156,7 @@ Task deadlines range from 10 to 3600 seconds. Background cancellation uses ACP a
 | `SEEKWING_DSH_ARGS` | JSON array of trusted launcher prefix arguments, default `[]`. Task text goes over ACP, never through shell interpolation. |
 | `SEEKWING_STATE_DIR` | Platform state directory above. |
 | `SEEKWING_SESSION_MODE` | `background` or `desktop`; per-task overrides are supported. |
-| `SEEKWING_DESKTOP_ENDPOINT` | `<state>/desktop/endpoint.json`, private companion discovery file. |
+| `SEEKWING_DESKTOP_ENDPOINT` | `<state>/desktop/endpoint.json`; custom directories and filenames are supported. Use the same value for installation and the client. |
 | `SEEKWING_DESKTOP_HOME` | Installer only: `DSH_HOME` or `~/.dsh`, selecting the Desktop profile. |
 | `SEEKWING_DSH_HOME` | `<state>/harness`; explicitly choose an existing trusted home to reuse it. |
 | `SEEKWING_PROVIDER` | `deepseek-official`. |
@@ -175,7 +179,7 @@ npm test
 npm pack --dry-run
 ```
 
-29 deterministic tests use an independent ACP wire fixture and native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation, deadlines, output caps, redaction, workspace-root validation and crash recovery. No provider credentials are needed.
+40 deterministic tests use an independent ACP wire fixture and native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation, deadlines, output caps, redaction, workspace-root validation and crash recovery. This release adds storage fault injection, concurrent stale-lock recovery, incomplete updates, custom discovery paths, concurrent diagnostics, shutdown races and withholding completion until final persistence settles. No provider credentials are needed.
 
 The opt-in smoke test **calls DeepSeek and consumes normal provider usage**. It edits only its generated scratch workspace and independently reruns the example test:
 

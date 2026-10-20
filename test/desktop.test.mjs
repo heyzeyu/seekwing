@@ -7,7 +7,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { createServer, request } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
-import { DesktopBridge, startDesktopServer } from '../desktop/index.mjs';
+import { DesktopBridge, startDesktopServer, apply } from '../desktop/index.mjs';
 import { connect, finished } from './helpers.mjs';
 
 function nativeHost() {
@@ -55,7 +55,7 @@ function nativeHost() {
       throw new Error(`Unimplemented fixture ${namespace}.${method}`);
     } },
   };
-  return { ctx, sessions, calls, emit };
+  return { ctx, sessions, calls, emit, events };
 }
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'seekwing-desktop-'));
@@ -166,6 +166,35 @@ test('Desktop endpoint enforces loopback host, bearer, origin, epoch and private
   const stale = await fetch(ep.url, { method: 'POST', headers: { authorization: 'Bearer ' + ep.token }, body: JSON.stringify({ action: 'hello', instanceId: 'stale' }) });
   assert.equal(stale.status, 400);
   assert.ok(!(await stale.text()).includes(ep.token));
+});
+
+test('Desktop honors the configured endpoint filename through native plugin activation', async t => {
+  const f = await fixture(t);
+  const endpointFile = path.join(f.root, 'desktop', 'custom-discovery.json');
+  let activation;
+  f.ctx.effect = effect => { activation = effect().next(); };
+  apply(f.ctx, { stateDir: path.dirname(endpointFile), endpointFile });
+  const { value: dispose } = await activation;
+  t.after(dispose);
+  const c = await connect(f.root, { extraEnv: { SEEKWING_DESKTOP_ENDPOINT: endpointFile } });
+  t.after(c.close);
+  const doctor = await c.call('doctor', { sessionMode: 'desktop' });
+  assert.equal(doctor.endpointFile, endpointFile);
+  assert.equal(doctor.version, JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version);
+  assert.equal(doctor.companionVersion, doctor.version);
+  assert.equal(doctor.visibleInDesktop, true);
+});
+
+test('failed Desktop endpoint publication removes native listeners and the loopback server', async t => {
+  const f = await fixture(t);
+  const endpointFile = path.join(f.root, 'occupied.json');
+  await mkdir(endpointFile);
+  let dispose;
+  try {
+    await assert.rejects(async () => { dispose = await startDesktopServer(f.ctx, path.join(f.root, 'desktop'), endpointFile); }, /EISDIR|EPERM|EEXIST/);
+  } finally { await dispose?.(); }
+  assert.equal(f.events.listenerCount('session/event'), 0);
+  assert.equal(f.events.listenerCount('user-questions/request'), 0);
 });
 
 test('Desktop absence fails explicitly without silently launching background generation', async t => {

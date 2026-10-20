@@ -54,6 +54,7 @@ export interface Task {
   error?: string;
   stderr?: string;
   cleanupError?: string;
-  cancellation?: 'user' | 'timeout' | 'shutdown';
+  persistenceError?: string;
+  cancellation?: 'user' | 'timeout' | 'shutdown' | 'persistence';
   reviewRequired: true;
 }
