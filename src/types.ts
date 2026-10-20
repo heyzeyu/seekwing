@@ -1,4 +1,4 @@
-import type { PermissionMode } from './config.js';
+import type { PermissionMode, SessionMode } from './config.js';
 
 export type TaskStatus = 'starting' | 'running' | 'needs_attention' | 'cancelling' | 'completed' | 'incomplete' | 'failed' | 'cancelled' | 'interrupted';
 export const terminal = (status: TaskStatus): boolean => ['completed', 'incomplete', 'failed', 'cancelled', 'interrupted'].includes(status);
@@ -8,6 +8,7 @@ export interface TaskInput {
   instruction: string;
   acceptance?: string;
   permissionMode: PermissionMode;
+  sessionMode?: SessionMode;
   modelValue?: string;
   reasoningEffort?: string;
   timeoutSeconds: number;
@@ -27,6 +28,8 @@ export interface Task {
   parentRunId?: string;
   ownerPid: number;
   sessionId?: string;
+  sessionMode?: SessionMode;
+  desktopAttention?: string;
   workspace: string;
   permissionMode: PermissionMode;
   configuredDefaultRoute: { provider: string; model: string };

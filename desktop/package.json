@@ -1,0 +1,11 @@
+{
+  "name": "seekwing-desktop",
+  "version": "0.2.0",
+  "description": "SeekWing companion inside the official DeepSeek Harness Desktop Host",
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": { ".": "./index.mjs", "./cordis.patch.yml": "./cordis.patch.yml" },
+  "files": ["index.mjs", "cordis.patch.yml", "LICENSE"],
+  "license": "MIT",
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}

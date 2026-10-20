@@ -2,7 +2,10 @@
   "mcpServers": {
     "seekwing": {
       "command": "node",
-      "args": ["./dist/seekwing.mjs", "mcp"],
+      "args": [
+        "./dist/seekwing.mjs",
+        "mcp"
+      ],
       "cwd": ".",
       "env_vars": [
         "DEEPSEEK_API_KEY",
@@ -14,8 +17,17 @@
         "SEEKWING_MODEL",
         "SEEKWING_ALLOWED_ROOTS",
         "SEEKWING_MAX_CONCURRENT",
-        "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
-        "http_proxy", "https_proxy", "all_proxy", "no_proxy"
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+        "SEEKWING_SESSION_MODE",
+        "SEEKWING_DESKTOP_ENDPOINT",
+        "SEEKWING_DESKTOP_HOME"
       ]
     }
   }

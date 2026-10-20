@@ -5,14 +5,22 @@ import { mkdir, readFile, writeFile, access } from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { homedir } from 'node:os';
 import { connect, finished } from './helpers.mjs';
 
 if (!process.env.SEEKWING_NATIVE_TEST_ROOT) throw new Error('Set SEEKWING_NATIVE_TEST_ROOT to an absolute scratch directory before running this opt-in test.');
 const root = path.resolve(process.env.SEEKWING_NATIVE_TEST_ROOT, randomUUID());
 const workspace = path.join(root, 'workspace');
 await mkdir(workspace, { recursive: true });
-const connection = await connect(path.join(root, 'state'), { native: true });
-const summary = { root, checks: [] };
+const desktopState = process.env.SEEKWING_STATE_DIR || (process.platform === 'darwin'
+  ? path.join(homedir(), 'Library', 'Application Support', 'SeekWing')
+  : process.platform === 'win32' ? path.join(process.env.LOCALAPPDATA || path.join(homedir(), 'AppData', 'Local'), 'SeekWing')
+    : path.join(process.env.XDG_STATE_HOME || path.join(homedir(), '.local', 'state'), 'seekwing'));
+// Test evidence has a fresh state root; discovery still targets the installed companion.
+const extraEnv = process.env.SEEKWING_SESSION_MODE === 'desktop'
+  ? { SEEKWING_DESKTOP_ENDPOINT: process.env.SEEKWING_DESKTOP_ENDPOINT || path.join(desktopState, 'desktop', 'endpoint.json') } : {};
+const connection = await connect(path.join(root, 'state'), { native: true, extraEnv });
+const summary = { root, sessionMode: process.env.SEEKWING_SESSION_MODE || 'background', checks: [] };
 const check = (name, task, extra = {}) => {
   summary.checks.push({ name, runId: task.runId, sessionId: task.sessionId, status: task.status, stopReason: task.stopReason, toolCallCount: task.toolCallCount, ...extra });
   process.stdout.write(JSON.stringify(summary.checks.at(-1)) + '\n');
@@ -25,7 +33,7 @@ try {
   assert.equal(one.status, 'completed', JSON.stringify(one));
   assert.doesNotMatch(one.stderr || '', /entry did not activate|unknown preset/i);
   assert.match(one.output, /SEEKWING_ACP_OK/);
-  check('real ACP generation', one);
+  check('real Harness generation', one);
   const reply = await connection.call('reply_task', { runId: first.runId, instruction: 'What exact test marker did I ask you to remember? Reply only that marker. Do not call tools.', timeoutSeconds: 90 });
   const two = await finished(connection, reply.runId, { attempts: 45 });
   assert.equal(two.status, 'completed', JSON.stringify(two));

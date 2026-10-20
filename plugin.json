@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "seekwing",
-  "version": "0.1.3",
-  "description": "DeepSeek subagents for Codex. Delegate through the official Harness ACP, then review the evidence.",
+  "version": "0.2.0",
+  "description": "DeepSeek subagents for Codex: background ACP or visible Harness Desktop sessions, with independent review.",
   "extensions": {
     "com.openai": {
       "requires_local_executor": true,

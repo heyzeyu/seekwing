@@ -3,13 +3,16 @@ import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
-export const VERSION = '0.1.3';
+export const VERSION = '0.2.0';
 export type PermissionMode = 'read-only' | 'workspace-write';
+export type SessionMode = 'background' | 'desktop';
 export interface Config {
   command: string;
   commandArgs: string[];
   stateDir: string;
   harnessHome: string;
+  desktopEndpoint: string;
+  sessionMode: SessionMode;
   provider: string;
   model: string;
   allowedRoots: string[];
@@ -34,13 +37,17 @@ async function executable(file: string): Promise<boolean> {
   try { await access(file, constants.X_OK); return (await stat(file)).isFile(); } catch { return false; }
 }
 
-export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<Config> {
+export function defaultStateDir(env: NodeJS.ProcessEnv = process.env): string {
   const base = process.platform === 'darwin'
     ? path.join(homedir(), 'Library', 'Application Support', 'SeekWing')
     : process.platform === 'win32'
       ? path.join(env.LOCALAPPDATA || path.join(homedir(), 'AppData', 'Local'), 'SeekWing')
       : path.join(env.XDG_STATE_HOME || path.join(homedir(), '.local', 'state'), 'seekwing');
-  const stateDir = path.resolve(env.SEEKWING_STATE_DIR || base);
+  return path.resolve(env.SEEKWING_STATE_DIR || base);
+}
+
+export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<Config> {
+  const stateDir = defaultStateDir(env);
   const desktop = '/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh';
   // Prefer the actual Desktop CLI: a user-defined `dsh` can be an unrelated SSH wrapper.
   let command = env.SEEKWING_DSH_COMMAND;
@@ -57,9 +64,13 @@ export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<
   if (!Array.isArray(commandArgs) || !commandArgs.every((arg) => typeof arg === 'string')) throw new Error('SEEKWING_DSH_ARGS must be a JSON array of strings.');
   const maxConcurrent = Number(env.SEEKWING_MAX_CONCURRENT || 2);
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 8) throw new Error('SEEKWING_MAX_CONCURRENT must be 1–8.');
+  const sessionMode = env.SEEKWING_SESSION_MODE || 'background';
+  if (sessionMode !== 'background' && sessionMode !== 'desktop') throw new Error('SEEKWING_SESSION_MODE must be background or desktop.');
   return {
     command, commandArgs, stateDir,
     harnessHome: path.resolve(env.SEEKWING_DSH_HOME || path.join(stateDir, 'harness')),
+    desktopEndpoint: path.resolve(env.SEEKWING_DESKTOP_ENDPOINT || path.join(stateDir, 'desktop', 'endpoint.json')),
+    sessionMode,
     provider: env.SEEKWING_PROVIDER || 'deepseek-official',
     model: env.SEEKWING_MODEL || 'deepseek-flash',
     allowedRoots: (env.SEEKWING_ALLOWED_ROOTS || '').split(path.delimiter).filter(Boolean),

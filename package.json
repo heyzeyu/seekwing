@@ -1,7 +1,7 @@
 {
   "name": "seekwing",
-  "version": "0.1.3",
-  "description": "DeepSeek subagents for Codex, over MCP and the official Harness ACP.",
+  "version": "0.2.0",
+  "description": "DeepSeek subagents for Codex, with background ACP and visible Harness Desktop sessions.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -24,7 +24,8 @@
     ".mcp.json",
     "README.md",
     "README.zh-CN.md",
-    "LICENSE"
+    "LICENSE",
+    "desktop"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",

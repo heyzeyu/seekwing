@@ -15,6 +15,9 @@ const result = await build({
   banner: { js: '#!/usr/bin/env node\nimport { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);' },
 });
 await chmod('dist/seekwing.mjs', 0o755);
+await build({ entryPoints: ['src/desktop-plugin.ts'], outfile: 'desktop/index.mjs',
+  platform: 'node', target: 'node22', format: 'esm', bundle: true, minify: true, legalComments: 'eof' });
+await writeFile('desktop/LICENSE', await readFile('LICENSE', 'utf8'));
 
 const packages = new Map();
 for (const input of Object.keys(result.metafile.inputs).filter((file) => file.includes('node_modules/'))) {

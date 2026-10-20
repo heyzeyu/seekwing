@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { AcpWorker, doctor } from './acp.js';
+import { DesktopClient, desktopDoctor } from './desktop-client.js';
 import { VERSION, workspacePath, type Config } from './config.js';
 import { TaskManager } from './tasks.js';
 import type { Task } from './types.js';
@@ -20,7 +21,7 @@ function view(task: Task, offset = 0, limit = 12_000, includeToolCalls = true) {
     nextOutputOffset: offset + output.length < task.output.length ? offset + output.length : null,
     toolCallCount: Object.keys(toolCalls).length,
     ...(includeToolCalls ? { toolCalls: Object.values(toolCalls).slice(-20), toolCallViewTruncated: Object.keys(toolCalls).length > 20 } : {}),
-    completionMeaning: 'completed means the ACP turn ended and the worker stopped. Codex must independently verify acceptance criteria.',
+    completionMeaning: 'completed means the Harness turn ended and SeekWing released its worker. Desktop conversations remain open. Codex must independently verify acceptance criteria.',
   };
 }
 
@@ -42,14 +43,23 @@ export async function serve(config: Config): Promise<void> {
   const write = { readOnlyHint: false, destructiveHint: true, openWorldHint: true };
 
   server.registerTool('doctor', {
-    description: 'Verify the official Harness ACP handshake and report local setup. Does not call a model or prove credentials work.',
-    inputSchema: {}, annotations: read,
-  }, () => result(() => doctor(config)));
+    description: 'Verify the background ACP or Desktop companion handshake and report local setup. Does not call a model or prove credentials work.',
+    inputSchema: { sessionMode: z.enum(['background', 'desktop']).optional() }, annotations: read,
+  }, ({ sessionMode }) => result(() => (sessionMode ?? config.sessionMode) === 'desktop' ? desktopDoctor(config) : doctor(config)));
 
   server.registerTool('inspect_models', {
-    description: 'Read the official ACP model/reasoning choices for a workspace. Use the returned opaque model value verbatim when a particular model is requested. Creates and closes an empty session without sending a prompt.',
-    inputSchema: { workspace: z.string().min(1) }, annotations: read,
-  }, ({ workspace }) => result(async () => {
+    description: 'Read model/reasoning choices from the chosen Harness runtime. Use its exact model value verbatim. Background mode creates an empty ACP session; Desktop mode reads the live catalog without creating a session. Sends no prompt.',
+    inputSchema: { workspace: z.string().min(1), sessionMode: z.enum(['background', 'desktop']).optional() }, annotations: read,
+  }, ({ workspace, sessionMode }) => result(async () => {
+    await workspacePath(config, workspace);
+    if ((sessionMode ?? config.sessionMode) === 'desktop') {
+      const desktop = new DesktopClient(config);
+      await desktop.connect();
+      const catalog = await desktop.call('catalog');
+      return { sessionMode: 'desktop', default: catalog.default, failures: catalog.failures,
+        configOptions: [{ id: 'model', options: catalog.groups.map((group: any) => ({ group: group.id, name: group.name,
+          options: group.models.map((model: any) => ({ value: JSON.stringify([group.id, model.id]), name: model.name, reasoning: model.reasoning })) })) }] };
+    }
     const worker = new AcpWorker(config, 'catalog-' + randomUUID(), await workspacePath(config, workspace), 'read-only', () => {}, async () => ({ outcome: { outcome: 'cancelled' } }));
     try {
       await worker.start();
@@ -60,6 +70,7 @@ export async function serve(config: Config): Promise<void> {
   server.registerTool('start_task', {
     description: 'Start a DeepSeek subagent in an absolute local workspace. Returns a run ID before completion; use wait_task. workspace-write requires an assignment that authorizes edits. No automatic approvals or remote host inference.',
     inputSchema: { workspace: z.string().min(1), instruction, acceptance,
+      sessionMode: z.enum(['background', 'desktop']).optional().describe('background starts an isolated ACP worker (default). desktop uses the installed companion inside the running Harness app and creates a visible conversation. Never silently falls back.'),
       permissionMode: z.enum(['read-only', 'workspace-write']).default('read-only'),
       modelValue: z.string().max(1_000).optional().describe('Exact opaque value from inspect_models; omitted uses the configured Harness route.'),
       reasoningEffort: z.string().max(100).optional(), timeoutSeconds, idempotencyKey }, annotations: write,
@@ -94,7 +105,7 @@ export async function serve(config: Config): Promise<void> {
     description: 'List recent SeekWing runs from the local state directory, including interrupted runs after a server restart.',
     inputSchema: { limit: z.number().int().min(1).max(50).default(10) }, annotations: read,
   }, ({ limit }) => result(async () => ({ tasks: (await manager.store.list(limit)).map((task) => ({ runId: task.runId, sessionId: task.sessionId, status: task.status,
-    workspace: task.workspace, permissionMode: task.permissionMode, createdAt: task.createdAt, parentRunId: task.parentRunId })) })));
+    workspace: task.workspace, permissionMode: task.permissionMode, sessionMode: task.sessionMode ?? 'background', createdAt: task.createdAt, parentRunId: task.parentRunId })) })));
 
   let shuttingDown: Promise<void> | undefined;
   const shutdown = () => shuttingDown ??= manager.shutdown().then(() => server.close());

@@ -6,18 +6,20 @@
 
 [English](README.md) · [MIT](LICENSE)
 
-Seek 来自 DeepSeek，Wing 代表搭档和僚机。插件采用 **MCP 服务 + 委派复核 Skill**，通过官方 ACP 启动 DeepSeek Harness。终端命令用于启动 MCP 和诊断连接。
+Seek 来自 DeepSeek，Wing 代表搭档和僚机。插件采用 **MCP 服务 + 委派复核 Skill**，支持独立后台 ACP 和 Harness 桌面会话两种执行方式。终端命令用于启动 MCP、安装桌面伴随插件和诊断连接。
 
-**v0.1.3 修复升级清理旧目录后 `doctor` 失效的问题；v0.1.2 修复只读权限预设激活，并返回启动警告**：在 macOS、Node 24.12.0、Harness Desktop 0.2.1-rc.2 和 `deepseek-official/deepseek-flash` 上，验证了真实生成、同一会话续聊、修改代码，以及原生只读沙箱拒绝写入。协议模拟测试也在 Linux CI 中运行；Windows 和其他 Harness 版本尚未实测。
+**v0.2.0 新增桌面模式**：任务直接在已经运行的 Harness Host 中执行，会话出现在桌面工作区列表；原有独立后台 ACP 模式继续保留。macOS、Harness Desktop **0.2.1-rc.2**、Node **24.12.0** 上已验证真实生成、同会话续聊和编辑文件。Windows 和其他 Harness 版本尚未实测。
 
 ```mermaid
 flowchart LR
     C[Codex 派发与复核] <-->|MCP stdio| S[SeekWing]
     S <-->|官方 ACP stdio| H[DeepSeek Harness 工作进程]
+    S <-->|本机认证桥接| D[Harness Desktop 内部伴随插件]
     H --> W[本地工作区与持久会话]
+    D --> W
 ```
 
-每轮使用独立的 Harness 进程，追加指令恢复同一个持久会话。它不直接控制已经打开的 Desktop 进程，也不会自动把任务发到 P330。
+`background` 每轮使用独立的官方 ACP 进程；`desktop` 使用已运行的桌面 Host。两种模式都可以继续原会话，`reply_task` 固定保留原来的模式、工作区和权限。执行位置是当前电脑；P330/SSH 远程桥接尚未实现。
 
 ## 安装
 
@@ -50,6 +52,30 @@ macOS 优先使用真正的 Desktop 内置 CLI，避免误用同名的 SSH 脚�
 
 `doctor` 只验证 ACP 握手，不代表密钥有效或模型生成成功。完整检查需要派发一个小任务并等待真实结果。
 
+## 启用桌面会话
+
+在安装后的 SeekWing 插件目录或本仓库目录运行：
+
+```sh
+node ./dist/seekwing.mjs desktop-install
+node ./dist/seekwing.mjs desktop-doctor
+```
+
+安装命令把伴随插件放进稳定的 SeekWing 状态目录，再通过官方 `dsh plugin --profile desktop add` 登记；保留桌面配置和已有聊天。首次安装可能热加载。**更新伴随插件后需要重启 DeepSeek Harness**，再运行 `desktop-doctor`；这里重启的是 DeepSeek，不是 Codex。Codex 插件更新后，在新的本地 Codex 聊天中加载工具定义。
+
+| 选择 | 运行方式 | 桌面可见 | 供应商与权限 |
+| --- | --- | --- | --- |
+| `background`（默认） | 独立官方 ACP 工作进程 | 不自动显示 | SeekWing 的独立 Home；原生审批转交 Codex |
+| `desktop` | 当前 Harness Host 内的伴随插件 | 原生工作区列表和聊天 | 使用桌面登录/模型；需要审批或回答时在 Harness 中处理 |
+
+给 `start_task` 设置 `"sessionMode": "desktop"`，或者对 Codex 说“让 DeepSeek 用桌面模式做这个任务，我要在 Harness 里看到会话”。工作区折叠时展开它即可看到 `SeekWing · <目录名>` 会话。`doctor`、`inspect_models` 也接受同一个参数。`SEEKWING_SESSION_MODE=desktop` 可改变新任务默认值。
+
+桌面桥接仅监听随机的 `127.0.0.1` 端口，使用每次 Host 启动生成的随机令牌和私有端点文件，拒绝浏览器 Origin、错误 Host 和旧实例。端点文件是凭据，**不要复制进聊天或提交 Git**。连接失败时会明确失败，不会偷偷改用后台模型。后台历史不会被自动搬迁到桌面。
+
+桌面模式通过官方模型选择接口设置会话模型；该接口也更新 Harness 的默认模型，行为与桌面选择模型一致。并发操作同一会话会被拒绝；运行中手工发送新消息会导致归属不确定，需先在 Harness 核对。取消只停止该轮任务，不退出 Harness，也不关闭会话。Host 重启或连接中断后不会自动重放指令。
+
+卸载伴随插件可使用 Desktop 内置 `dsh plugin --profile desktop remove seekwing-desktop`，然后重启 Harness；Codex 的后台模式仍可使用。
+
 ## 使用方式
 
 安装启用后，直接对 Codex 说：
@@ -60,14 +86,14 @@ macOS 优先使用真正的 Desktop 内置 CLI，避免误用同名的 SSH 脚�
 
 > 把这几条审核意见发回刚才的 DeepSeek 会话，让它修正后你再检查。
 
-Skill 会明确工作区、允许范围和验收标准。分析默认只读；已授权的代码修改使用 `workspace-write`，无需重复确认。指定模型时，使用 ACP 公布的原始选项，不静默切换模型。
+Skill 会明确工作区、允许范围和验收标准。分析默认只读；已授权的代码修改使用 `workspace-write`，无需重复确认。指定模型时，先对选定模式调用 `inspect_models`，传入其原始 `modelValue`，不静默切换模型。
 
 ## MCP 工具
 
 | 工具 | 作用 |
 | --- | --- |
-| `doctor` | 检查官方 CLI 和 ACP 握手，不调用模型。 |
-| `inspect_models` | 读取模型和推理选项；创建并关闭空会话。 |
+| `doctor` | 检查所选模式的 ACP 或桌面伴随插件握手，不调用模型。 |
+| `inspect_models` | 读取所选模式的模型和推理选项；桌面模式不创建空会话。 |
 | `start_task` | 创建任务并返回 ID；默认只读、600 秒截止时间。 |
 | `get_task` | 读取分页输出、进度、权限请求和最近的工具证据。 |
 | `wait_task` | 单次最多等 30 秒；等待超时不会取消任务。 |
@@ -84,18 +110,19 @@ Skill 会明确工作区、允许范围和验收标准。分析默认只读；�
   "instruction": "修复 sum.mjs 的加法错误，只修改这个文件。",
   "acceptance": "现有 node --test sum.test.mjs 通过，测试文件不变。",
   "permissionMode": "workspace-write",
+  "sessionMode": "desktop",
   "timeoutSeconds": 600,
   "idempotencyKey": "sum-fix-1"
 }
 ```
 
-创建成功只代表收到任务。同一份指令重试时复用 `idempotencyKey`，不要在同一个 key 下更改参数。记录包含会话 ID、前一轮 ID、实际选择的 ACP `modelValue`、输出、工具状态和结束原因。`configuredDefaultRoute` 是默认路由，实际选择以 `modelValue`、`configOptions` 为准。
+创建成功只代表收到任务。同一份指令重试时复用 `idempotencyKey`，不要在同一个 key 下更改参数。记录包含会话 ID、前一轮 ID、实际选择的 `modelValue` 和 `sessionMode`、输出、工具状态和结束原因。`configuredDefaultRoute` 是默认路由，实际选择以 `modelValue`、`configOptions` 为准。
 
-`completed` 表示 ACP 返回 `end_turn` 且工作进程已停止，**仍需 Codex 核对验收标准**。输出上限停止标为 `incomplete`，模型或连接错误标为 `failed`。已完成的一轮也可能有失败的工具调用，需要复核。服务中断后不会自动重放指令，应先检查是否已经修改了文件。
+`completed` 表示原生 Harness 轮次结束且 SeekWing 已完成清理；桌面会话仍保留，**仍需 Codex 核对验收标准**。输出上限停止标为 `incomplete`，模型或连接错误标为 `failed`。已完成的一轮也可能有失败的工具调用，需要复核。服务中断后不会自动重放指令，应先检查是否已经修改了文件。
 
 ## 权限与数据
 
-同时设置 `DSH_PERMISSION_MODE` 和最后一层原生 Harness 配置，使用真正的 `read-only` / `workspace-write` 沙箱，不暴露 `danger-full-access`。只读任务不能通过 SeekWing 提权。写入任务的原生权限请求会转交 Codex；只有用户授权了该次越界操作时，才能选择 `allow_once`。普通项目编辑授权不包含沙箱外权限。
+后台模式设置 `DSH_PERMISSION_MODE` 和最后一层原生配置；桌面模式使用会话级原生 sandbox/approval 事件。两种模式使用真正的 `read-only` / `workspace-write` 沙箱，不暴露 `danger-full-access`。只读任务不能通过 SeekWing 提权。后台写入任务的原生权限请求会转交 Codex，桌面请求保留在 Harness UI；只有用户授权了该次越界操作时，才能选择 `allow_once`。普通项目编辑授权不包含沙箱外权限。
 
 任务文本不是逐文件强制白名单。需要隔离其他修改时，使用独立 checkout/worktree。`SEEKWING_ALLOWED_ROOTS` 检查提交时选择的工作区和真实路径，不是额外的读取权限沙箱。配置的 Harness 程序、Home 和插件应当可信。
 
@@ -105,9 +132,9 @@ Skill 会明确工作区、允许范围和验收标准。分析默认只读；�
 - Linux：`$XDG_STATE_HOME/seekwing`，未设置则为 `~/.local/state/seekwing`
 - Windows（未实测）：`%LOCALAPPDATA%/SeekWing`
 
-默认 Harness Home 是状态目录中的 `harness/`，与 Desktop 分开。记录包含任务指令和执行证据，使用原子写入和私有文件权限。桥接层过滤已知凭据环境变量的值和常见 token 格式，但不能保证识别源码中的所有秘密，不应派发不必要的敏感内容。桥接层不保存思考片段；Harness 自身保留原生会话历史。
+后台模式默认 Harness Home 是状态目录中的 `harness/`，与 Desktop 分开；桌面模式使用当前 Host 的原生存储。记录包含任务指令和执行证据，使用原子写入和私有文件权限。桥接层过滤已知凭据环境变量的值和常见 token 格式，但不能保证识别源码中的所有秘密，不应派发不必要的敏感内容。桥接层不保存思考片段；Harness 自身保留原生会话历史。
 
-截止时间可设为 10–3600 秒。取消先走 ACP，不响应时终止所拥有的进程组，清理结束后才标记终态。并发上限按 MCP 进程计算；使用同一状态目录的服务共享会话锁。历史没有自动过期，删除前应确认相关任务已停止。
+截止时间可设为 10–3600 秒。后台取消先走 ACP，不响应时终止所拥有的进程组；桌面取消使用原生 session.cancel，不终止 Desktop Host。未确认该轮停止时保留中断或清理错误，清理结束后才标记终态。并发上限按 MCP 进程计算；使用同一状态目录的服务共享会话锁。历史没有自动过期，删除前应确认相关任务已停止。
 
 ## 配置
 
@@ -116,6 +143,9 @@ Skill 会明确工作区、允许范围和验收标准。分析默认只读；�
 | `SEEKWING_DSH_COMMAND` | 官方 CLI 绝对路径；macOS 优先内置 CLI，再查 `PATH`。 |
 | `SEEKWING_DSH_ARGS` | 可信启动参数前缀的 JSON 数组，默认 `[]`；任务通过 ACP 传输，不拼接 shell 命令。 |
 | `SEEKWING_STATE_DIR` | 上述平台状态目录。 |
+| `SEEKWING_SESSION_MODE` | `background`；也可设置 `desktop`，单次任务可覆盖。 |
+| `SEEKWING_DESKTOP_ENDPOINT` | `<状态目录>/desktop/endpoint.json`，桌面伴随插件的私有发现文件。 |
+| `SEEKWING_DESKTOP_HOME` | 仅安装时使用：`DSH_HOME` 或 `~/.dsh`，选择桌面 profile。 |
 | `SEEKWING_DSH_HOME` | `<状态目录>/harness`；可显式指定已有可信 Home。 |
 | `SEEKWING_PROVIDER` | `deepseek-official`。 |
 | `SEEKWING_MODEL` | `deepseek-flash`；必须是当前 Harness 和供应商支持的路由。 |
@@ -123,7 +153,7 @@ Skill 会明确工作区、允许范围和验收标准。分析默认只读；�
 | `SEEKWING_MAX_CONCURRENT` | 每个 MCP 默认 `2`，范围 `1`–`8`。 |
 | `DEEPSEEK_API_KEY` | 默认官方 API 的凭据。 |
 
-复用 Desktop 登录态需要显式选择其可信 Harness Home 和匹配供应商，例如 `deepseek-account`，这个登录路由尚未做完整实测。即使共用 Home，已打开窗口也不会自动收到 CLI 实时事件，可能需要刷新列表并选择正确工作区。首版不包含 P330/SSH 远程桥接。
+桌面模式使用现有 Harness 登录态，已通过 `deepseek-account/deepseek-flash`、High 真实验证。仅共享后台 `DSH_HOME` 不能代替桌面桥接：ACP 不会向正在运行的桌面工作区登记会话或推送实时事件。
 
 其他 MCP 客户端可启动 `node /absolute/path/to/seekwing/dist/seekwing.mjs mcp` 并配置环境变量传递。标准输出只传输 MCP 消息。仓库同时提供便携格式和 Codex 环境变量兼容层。
 
@@ -137,15 +167,18 @@ npm test
 npm pack --dry-run
 ```
 
-独立 ACP 协议模拟器覆盖生命周期、续聊、幂等、权限、会话锁、跨进程取消、截止时间、输出截断、脱敏、工作区边界和崩溃恢复，不需要模型密钥。
+17 项确定性测试使用 ACP 模拟器和桌面 Host 适配器，覆盖双模式完成、桌面认证/会话隔离/取消/拒绝回退，以及生命周期、续聊、幂等、权限、会话锁、跨进程取消、截止时间、输出截断、脱敏、工作区边界和崩溃恢复，不需要模型密钥。
 
 可选实测**会调用真实 DeepSeek，消耗供应商额度**，只修改自动生成的临时工作区，并独立重跑示例测试：
 
 ```sh
 SEEKWING_NATIVE_TEST_ROOT=/absolute/path/to/scratch node test/native-smoke.mjs
+
+# 已安装桌面伴随插件且 Harness 正在运行：
+SEEKWING_SESSION_MODE=desktop SEEKWING_NATIVE_TEST_ROOT=/absolute/path/to/scratch node test/native-smoke.mjs
 ```
 
-仓库提交构建后的 `dist/seekwing.mjs` 和 `dist/THIRD_PARTY_NOTICES.txt`，确保干净安装可直接使用；CI 重建并检查一致性。依赖版本已锁定，ACP SDK **1.4.0** 与本次实测 Harness 一致。
+仓库提交构建后的 `dist/seekwing.mjs`、`desktop/index.mjs` 和 `dist/THIRD_PARTY_NOTICES.txt`，确保干净安装可直接使用；CI 重建并检查一致性。依赖版本已锁定，ACP SDK **1.4.0** 与本次实测 Harness 一致。
 
 ## 参考与许可证
 

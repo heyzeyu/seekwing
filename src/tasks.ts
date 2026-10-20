@@ -2,13 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { RequestPermissionRequest, RequestPermissionResponse, SessionNotification } from '@agentclientprotocol/sdk';
 import { AcpWorker } from './acp.js';
+import { DesktopWorker } from './desktop-client.js';
+import type { Worker } from './worker.js';
 import { workspacePath, type Config } from './config.js';
 import { Store } from './store.js';
 import { terminal, type Task, type TaskInput } from './types.js';
 
 interface Job {
   task: Task;
-  worker?: AcpWorker;
+  worker?: Worker;
   done: Promise<void>;
   writes: Promise<void>;
   permissions: Map<string, (response: RequestPermissionResponse) => void>;
@@ -37,6 +39,7 @@ export class TaskManager {
     const now = new Date().toISOString();
     const task: Task = {
       schemaVersion: 1, runId, parentRunId: parent?.runId, ownerPid: process.pid, sessionId: parent?.sessionId,
+      sessionMode: input.sessionMode ?? this.config.sessionMode,
       workspace, permissionMode: input.permissionMode, configuredDefaultRoute: { provider: this.config.provider, model: this.config.model },
       modelValue: input.modelValue, reasoningEffort: input.reasoningEffort,
       status: 'starting', createdAt: now, updatedAt: now, instruction: input.instruction, acceptance: input.acceptance,
@@ -44,7 +47,7 @@ export class TaskManager {
       pendingPermissions: [], permissionDecisions: [], reviewRequired: true,
     };
     const { idempotencyKey: _, ...identity } = input;
-    const submission = { ...identity, workspace, parentRunId: parent?.runId };
+    const submission = { ...identity, sessionMode: task.sessionMode, workspace, parentRunId: parent?.runId };
     if (input.idempotencyKey) {
       const existing = await this.store.findKey(input.idempotencyKey, submission);
       if (existing) return this.get(existing).catch(() => { throw new Error(`Idempotent task ${existing} has uncertain admission. Inspect state; do not automatically resubmit.`); });
@@ -82,6 +85,7 @@ export class TaskManager {
     if (!terminal(parent.status)) throw new Error('Wait for the current turn to finish before replying.');
     if (!parent.sessionId) throw new Error('This task has no resumable Harness session.');
     return this.start({ workspace: parent.workspace, permissionMode: parent.permissionMode,
+      sessionMode: parent.sessionMode ?? 'background',
       modelValue: parent.modelValue, reasoningEffort: parent.reasoningEffort,
       instruction, acceptance, idempotencyKey, timeoutSeconds: timeoutSeconds ?? parent.timeoutSeconds }, parent);
   }
@@ -193,8 +197,15 @@ export class TaskManager {
 
   private async execute(job: Job, release?: () => Promise<void>): Promise<void> {
     const task = job.task;
-    const worker = job.worker = new AcpWorker(this.config, task.runId, task.workspace, task.permissionMode,
-      (update) => this.update(job, update), (request) => this.permission(job, request));
+    const worker = job.worker = task.sessionMode === 'desktop'
+      ? new DesktopWorker(this.config, task.runId, task.workspace, task.permissionMode, (update) => this.update(job, update), (message) => {
+        if (task.desktopAttention === message) return;
+        task.desktopAttention = message;
+        if (!task.cancellation) task.status = message ? 'needs_attention' : 'running';
+        void this.save(job).catch(() => {});
+      })
+      : new AcpWorker(this.config, task.runId, task.workspace, task.permissionMode,
+        (update) => this.update(job, update), (request) => this.permission(job, request));
     const timeout = setTimeout(() => { void this.cancelJob(job, 'timeout').catch(() => {}); }, task.timeoutSeconds * 1_000);
     let readingControls = false;
     const controls = setInterval(() => {
@@ -239,11 +250,12 @@ export class TaskManager {
       for (const resolve of job.permissions.values()) resolve({ outcome: { outcome: 'cancelled' } });
       job.permissions.clear();
       task.pendingPermissions = [];
+      delete task.desktopAttention;
       try {
         await worker.stop();
         if (task.cancellation) {
           outcome = task.cancellation === 'timeout' ? 'failed' : 'cancelled';
-          if (task.cancellation === 'timeout') task.error = 'Task deadline exceeded; the owned Harness worker has stopped.';
+          if (task.cancellation === 'timeout') task.error = 'Task deadline exceeded; the owned Harness turn has stopped.';
         }
         if (worker.cleanupWarning) {
           task.cleanupError = worker.cleanupWarning;
