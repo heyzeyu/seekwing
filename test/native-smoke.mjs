@@ -23,6 +23,7 @@ try {
   const first = await connection.call('start_task', { workspace, instruction: `Remember this test marker for the next turn: ${marker}. Do not call any tools. Reply only SEEKWING_ACP_OK.`, timeoutSeconds: 90 });
   const one = await finished(connection, first.runId, { attempts: 45 });
   assert.equal(one.status, 'completed', JSON.stringify(one));
+  assert.doesNotMatch(one.stderr || '', /entry did not activate|unknown preset/i);
   assert.match(one.output, /SEEKWING_ACP_OK/);
   check('real ACP generation', one);
   const reply = await connection.call('reply_task', { runId: first.runId, instruction: 'What exact test marker did I ask you to remember? Reply only that marker. Do not call tools.', timeoutSeconds: 90 });
@@ -49,6 +50,7 @@ try {
     timeoutSeconds: 120 });
   const four = await finished(connection, denied.runId, { attempts: 65 });
   assert.equal(four.status, 'completed', JSON.stringify(four));
+  assert.doesNotMatch(four.stderr || '', /entry did not activate|unknown preset/i);
   assert.ok(four.toolCalls.some((call) => call.status === 'failed'), 'Expected an actual denied native tool call.');
   await assert.rejects(access(path.join(workspace, 'denied.txt')));
   check('native read-only write denial', four, { fileAbsent: true });

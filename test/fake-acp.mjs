@@ -8,6 +8,14 @@ const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', 
 const result = (id, result) => send({ id, result });
 const update = (sessionId, update) => send({ method: 'session/update', params: { sessionId, update } });
 const options = [{ id: 'model', name: 'Model', type: 'select', currentValue: '["deepseek-official","fake"]', options: [{ value: '["deepseek-official","fake"]', name: 'Fake' }] }];
+const patch = JSON.parse(await readFile(process.argv[process.argv.indexOf('--patch') + 1], 'utf8'));
+const permissionConfig = patch.find((entry) => entry.id === 'permission')?.config || {};
+// Model the upstream config boundary that caused a real activation failure:
+// overlays replace config, and the native fallback catalog has no read-only preset.
+const presets = permissionConfig.presets || {
+  'workspace-write': { sandbox: 'workspace-write', approval: 'ask' },
+  'danger-full-access': { sandbox: 'danger-full-access', approval: 'never' },
+};
 let sessionId;
 let prompt;
 let permission;
@@ -27,6 +35,10 @@ lines.on('line', async (line) => {
     }
     switch (message.method) {
       case 'initialize':
+        if (process.env.SEEKWING_FIXTURE_WARNING) process.stderr.write(`fixture startup warning ${process.env.TEST_API_KEY}\n`);
+        if (!presets[permissionConfig.defaultPreset]) {
+          send({ id: message.id, error: { code: -32603, message: 'permission: unknown default preset' } }); break;
+        }
         result(message.id, { protocolVersion: 1, agentInfo: { name: 'deepseek-harness-acp', version: 'fixture' }, agentCapabilities: { sessionCapabilities: { close: {}, resume: {} } }, authMethods: [] }); break;
       case 'session/new':
         sessionId = randomUUID();

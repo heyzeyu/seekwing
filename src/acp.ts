@@ -46,7 +46,15 @@ export class AcpWorker {
     await writeFile(this.patchFile, JSON.stringify([
       { id: 'acp', config: { provider: this.config.provider, model: this.config.model } },
       { id: 'sandbox-policy', config: { mode: this.permissionMode, workspaceRoot: this.workspace } },
-      { id: 'permission', config: { defaultPreset: this.permissionMode } },
+      // A Cordis overlay replaces this plugin's config; keeping only defaultPreset
+      // falls back to the upstream catalog, which does not include read-only.
+      { id: 'permission', config: {
+        defaultPreset: this.permissionMode,
+        presets: {
+          'read-only': { sandbox: 'read-only', approval: 'ask' },
+          'workspace-write': { sandbox: 'workspace-write', approval: 'ask' },
+        },
+      } },
       { id: 'approval', config: { policy: 'ask' } },
     ]), { mode: 0o600 });
     if (this.stopped) throw new Error('Worker was cancelled before launch.');
@@ -149,9 +157,11 @@ export async function doctor(config: Config) {
   const worker = new AcpWorker(config, 'doctor-' + process.pid, process.cwd(), 'read-only', () => {}, async () => ({ outcome: { outcome: 'cancelled' } }));
   try {
     const protocol = await worker.start();
+    await worker.stop();
     return { version: VERSION, command: config.command, stateDir: config.stateDir, harnessHome: config.harnessHome,
       defaultRoute: { provider: config.provider, model: config.model },
       apiKeyPresent: Boolean(config.env.DEEPSEEK_API_KEY), protocol,
+      warnings: worker.stderr ? [worker.stderr] : [],
       note: 'ACP handshake verified. No model request was made; credentials and generation are not yet verified.' };
   } catch (error) {
     throw new Error(config.redact(`${String(error)}${worker.stderr ? '\nHarness stderr: ' + worker.stderr : ''}`));

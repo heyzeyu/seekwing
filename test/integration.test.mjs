@@ -62,6 +62,14 @@ test('permission forwarding, read-only escalation refusal, and explicit workspac
   assert.equal(allowed.permissionDecisions.length, 1);
 });
 
+test('doctor surfaces native startup warnings while redacting credentials', async (t) => {
+  const c = await setup(t, { SEEKWING_FIXTURE_WARNING: '1' });
+  const diagnostic = await c.call('doctor');
+  assert.equal(diagnostic.warnings.length, 1);
+  assert.match(diagnostic.warnings[0], /fixture startup warning \[REDACTED\]/);
+  assert.ok(!JSON.stringify(diagnostic).includes('fake-sensitive-value'));
+});
+
 test('cancel, cross-process control, and serialization of session follow-ups', async (t) => {
   const c = await setup(t);
   const first = await c.call('start_task', { workspace: c.workspace, instruction: 'SLOW' });
