@@ -1,5 +1,8 @@
 node_modules/
-dist/
+dist/*
+!dist/seekwing.mjs
+!dist/THIRD_PARTY_NOTICES.txt
+*.tgz
 coverage/
 *.tsbuildinfo
 .DS_Store

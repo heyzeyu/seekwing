@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "seekwing": {
+      "command": "node",
+      "args": ["./dist/seekwing.mjs", "mcp"],
+      "cwd": ".",
+      "env_vars": [
+        "DEEPSEEK_API_KEY",
+        "SEEKWING_DSH_COMMAND",
+        "SEEKWING_DSH_ARGS",
+        "SEEKWING_DSH_HOME",
+        "SEEKWING_STATE_DIR",
+        "SEEKWING_PROVIDER",
+        "SEEKWING_MODEL",
+        "SEEKWING_ALLOWED_ROOTS",
+        "SEEKWING_MAX_CONCURRENT",
+        "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+        "http_proxy", "https_proxy", "all_proxy", "no_proxy"
+      ]
+    }
+  }
+}

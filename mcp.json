@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "seekwing": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/dist/seekwing.mjs", "mcp"],
+      "cwd": "${PLUGIN_ROOT}"
+    }
+  }
+}
