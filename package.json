@@ -1,6 +1,6 @@
 {
   "name": "seekwing",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DeepSeek subagents for Codex, with background ACP and visible Harness Desktop sessions.",
   "type": "module",
   "license": "MIT",
@@ -25,7 +25,8 @@
     "README.md",
     "README.zh-CN.md",
     "LICENSE",
-    "desktop"
+    "desktop",
+    "docs"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",

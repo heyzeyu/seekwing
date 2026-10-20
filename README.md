@@ -8,7 +8,9 @@
 
 SeekWing lets Codex assign scoped work to DeepSeek Harness, wait for results, continue the same session with corrections, and independently check files and tests. **Seek** comes from DeepSeek; **Wing** is your coding wingman.
 
-**v0.2.0 adds visible Desktop sessions alongside the existing background ACP mode.** Real generation, same-session follow-up and file edits have been verified on macOS with Harness Desktop **0.2.1-rc.2**, Node **24.12.0** and DeepSeek Flash / High. Windows and other Harness versions remain untested.
+**v0.2.1 hardens both modes:** cancellation during admission, lost-response cleanup, manual-turn ownership, split UTF-8, long Chinese prompts and protocol checks. [Source comparison and review](docs/reference-review.zh-CN.md).
+
+Visible Desktop sessions were introduced in v0.2.0 alongside background ACP. Real generation, same-session follow-up and file edits have been verified on macOS with Harness Desktop **0.2.1-rc.2**, Node **24.12.0** and DeepSeek Flash / High. Windows and other Harness versions remain untested.
 
 ```mermaid
 flowchart LR
@@ -72,7 +74,7 @@ Pass `"sessionMode": "desktop"` to `start_task`, `doctor` or `inspect_models`. O
 
 The companion binds only a random loopback port, uses a fresh Host token and private endpoint descriptor, and rejects browser Origins, incorrect Hosts and stale instances. **Treat the descriptor as a credential.** Connection errors fail explicitly rather than falling back to another model/runtime. Existing background sessions are not migrated automatically.
 
-Explicit Desktop model selection uses the official API, which also changes the Harness model default, matching its native UI behavior. A busy session is rejected. Do not send another manual prompt into a delegated turn; foreign prompts make result ownership uncertain. Cancellation stops only the owned turn and preserves the conversation and Desktop app. Host restart/disconnection never automatically replays instructions.
+An unchanged selection does not rewrite defaults. Explicit Desktop model selection uses the official API, which also changes the Harness model default, matching its native UI behavior. A busy session is rejected. Do not send another manual prompt into a delegated turn; foreign prompts make result ownership uncertain. Cancellation stops only the owned turn and preserves the conversation and Desktop app. Host restart/disconnection never automatically replays instructions. Model controls, prompt admission, cancellation and cleanup are serialized per turn; a cancelled turn cannot be submitted later. Cleanup preserves a later manual conversation turn.
 
 To remove the companion, use Desktop's bundled `dsh plugin --profile desktop remove seekwing-desktop`, then restart Harness. Background mode remains available.
 
@@ -118,6 +120,8 @@ Example `start_task` arguments:
 
 Creation is an acknowledgement, not completion. Reuse an idempotency key only for identical inputs. Records include session and parent-run IDs, `sessionMode`, selected `modelValue`, output, tool statuses, timestamps, stop reason and cleanup errors. `configuredDefaultRoute` is the process fallback; the actual selection is in `modelValue` and `configOptions`.
 
+A confirmed `end_turn` response stays `completed` if a user cancel races with completion; the cancellation request is still recorded. Task deadlines still fail expired work.
+
 `completed` means the native turn ended and SeekWing released its worker. Desktop conversations remain open. **Codex still checks the acceptance criteria.** Token-limit stops are `incomplete`; model/transport errors are `failed`. Failed tool calls remain visible even in a completed turn. An interrupted task is never automatically replayed: inspect its workspace before resuming.
 
 ## Permissions and data
@@ -136,7 +140,9 @@ Default private state locations:
 
 The background Harness home is `<state>/harness`, separate from Desktop. Desktop mode uses the current Host's native storage. Bridge records are atomically written with private file permissions and contain task instructions and evidence. Known credential environment values and common bearer/key patterns are redacted, but arbitrary secrets in source files are not guaranteed to be recognized. Avoid unnecessarily delegating sensitive data. The bridge does not retain thought chunks; Harness retains its normal session history.
 
-Task deadlines range from 10 to 3600 seconds. Background cancellation uses ACP and then its owned process group if needed. Desktop uses native session cancellation and never kills the Host; uncertain cleanup is reported. Terminal status follows cleanup. Concurrency is limited per MCP server; session locks are shared by servers using the same state directory. History has no automatic expiry; stop related tasks before removing state.
+Desktop HTTP bodies are capped at 512 KiB and decoded after byte assembly, preserving split UTF-8 and supported long prompts. Both backends reject incompatible protocol versions before sending instructions. Upgrade the companion with `desktop-install` and restart Harness for this release.
+
+Task deadlines range from 10 to 3600 seconds. Background cancellation uses ACP and then its owned process group if needed. Desktop uses native session cancellation and never kills the Host; uncertain cleanup is reported. Terminal status follows cleanup. Concurrency is limited per MCP server, with an additional eight-run limit in the Desktop Host; session locks are shared by servers using the same state directory. History has no automatic expiry; stop related tasks before removing state.
 
 ## Configuration
 
@@ -169,7 +175,7 @@ npm test
 npm pack --dry-run
 ```
 
-17 deterministic tests use an independent ACP wire fixture and native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation, deadlines, output caps, redaction, workspace-root validation and crash recovery. No provider credentials are needed.
+29 deterministic tests use an independent ACP wire fixture and native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation, deadlines, output caps, redaction, workspace-root validation and crash recovery. No provider credentials are needed.
 
 The opt-in smoke test **calls DeepSeek and consumes normal provider usage**. It edits only its generated scratch workspace and independently reruns the example test:
 

@@ -20,6 +20,7 @@ let sessionId;
 let prompt;
 let permission;
 let hanging = false;
+let completeOnCancel = false;
 const finish = (stopReason = 'end_turn') => { if (prompt) result(prompt.id, { stopReason }); prompt = undefined; };
 const lines = createInterface({ input: process.stdin });
 process.stdin.on('end', () => process.exit(0));
@@ -39,7 +40,7 @@ lines.on('line', async (line) => {
         if (!presets[permissionConfig.defaultPreset]) {
           send({ id: message.id, error: { code: -32603, message: 'permission: unknown default preset' } }); break;
         }
-        result(message.id, { protocolVersion: 1, agentInfo: { name: 'deepseek-harness-acp', version: 'fixture' }, agentCapabilities: { sessionCapabilities: { close: {}, resume: {} } }, authMethods: [] }); break;
+        result(message.id, { protocolVersion: Number(process.env.SEEKWING_FIXTURE_PROTOCOL || 1), agentInfo: { name: 'deepseek-harness-acp', version: 'fixture' }, agentCapabilities: { sessionCapabilities: { close: {}, resume: {} } }, authMethods: [] }); break;
       case 'session/new':
         sessionId = randomUUID();
         await writeFile(path.join(process.env.DSH_HOME, sessionId + '.json'), JSON.stringify({ turns: 0 }));
@@ -56,6 +57,7 @@ lines.on('line', async (line) => {
         prompt = message;
         const text = message.params.prompt[0].text;
         hanging = text.includes('HANG');
+        completeOnCancel = text.includes('COMPLETE_ON_CANCEL');
         const stateFile = path.join(process.env.DSH_HOME, sessionId + '.json');
         const state = JSON.parse(await readFile(stateFile, 'utf8'));
         state.turns++;
@@ -78,7 +80,7 @@ lines.on('line', async (line) => {
         finish(text.includes('MAX_TOKENS') ? 'max_tokens' : 'end_turn');
         break;
       }
-      case 'session/cancel': if (!hanging) finish('cancelled'); break;
+      case 'session/cancel': if (!hanging) finish(completeOnCancel ? 'end_turn' : 'cancelled'); break;
       case 'session/close': if (!hanging) { finish('cancelled'); result(message.id, {}); } break;
     }
   } catch (error) { process.stderr.write(String(error) + '\n'); }

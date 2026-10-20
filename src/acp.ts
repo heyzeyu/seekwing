@@ -4,13 +4,8 @@ import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { client, methods, ndJsonStream, PROTOCOL_VERSION, type ClientConnection, type InitializeResponse, type NewSessionResponse, type ResumeSessionResponse, type RequestPermissionRequest, type RequestPermissionResponse, type SessionNotification } from '@agentclientprotocol/sdk';
 import { privateDir, VERSION, type Config, type PermissionMode } from './config.js';
-
-export async function bounded<T>(operation: Promise<T>, ms: number, message: string): Promise<T> {
-  let timer: NodeJS.Timeout;
-  try {
-    return await Promise.race([operation, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })]);
-  } finally { clearTimeout(timer!); }
-}
+import { bounded } from './worker.js';
+export { bounded } from './worker.js';
 
 export class AcpWorker {
   private child?: ChildProcessWithoutNullStreams;
@@ -83,6 +78,7 @@ export class AcpWorker {
     }), this.config.startupTimeoutMs, 'Harness ACP initialization timed out.');
     if (this.spawnError) throw this.spawnError;
     if (this.agentInfo.agentInfo?.name !== 'deepseek-harness-acp') throw new Error('The executable is not the official DeepSeek Harness ACP agent.');
+    if (this.agentInfo.protocolVersion !== PROTOCOL_VERSION) throw new Error(`Unsupported Harness ACP protocol ${this.agentInfo.protocolVersion}; SeekWing requires stable ACP ${PROTOCOL_VERSION}. Update compatible Harness/SeekWing versions before sending a task.`);
     return this.agentInfo;
   }
 

@@ -13,3 +13,10 @@ export interface Worker {
   stop(): Promise<void>;
 }
 export type Update = (notification: SessionNotification) => void;
+
+export async function bounded<T>(operation: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout;
+  try {
+    return await Promise.race([operation, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })]);
+  } finally { clearTimeout(timer!); }
+}

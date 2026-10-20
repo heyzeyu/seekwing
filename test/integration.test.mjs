@@ -70,6 +70,31 @@ test('doctor surfaces native startup warnings while redacting credentials', asyn
   assert.ok(!JSON.stringify(diagnostic).includes('fake-sensitive-value'));
 });
 
+test('an unsupported ACP version fails before any prompt or session is created', async t => {
+  const c = await setup(t, { SEEKWING_FIXTURE_PROTOCOL: '2' });
+  const doctor = await c.call('doctor', {}, { allowError: true });
+  assert.equal(doctor.isError, true);
+  assert.match(doctor.content[0].text, /Unsupported Harness ACP protocol/);
+  const task = await c.call('start_task', { workspace: c.workspace, instruction: 'must not run' });
+  const result = await finished(c, task.runId);
+  assert.equal(result.status, 'failed');
+  assert.equal(result.sessionId, undefined);
+  assert.equal(result.toolCallCount, 0);
+});
+
+test('a confirmed completed result is preserved when cancellation arrives at the finish boundary', async t => {
+  const c = await setup(t);
+  const task = await c.call('start_task', { workspace: c.workspace, instruction: 'SLOW COMPLETE_ON_CANCEL' });
+  for (let n = 0; n < 30; n++) {
+    if ((await c.call('get_task', { runId: task.runId })).toolCallCount) break;
+    await delay(20);
+  }
+  const result = await c.call('cancel_task', { runId: task.runId });
+  assert.equal(result.stopReason, 'end_turn');
+  assert.equal(result.status, 'completed');
+  assert.equal(result.cancellation, 'user');
+});
+
 test('doctor survives removal of the server working directory during a plugin upgrade', async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), 'seekwing-upgrade-'));
   const originalCwd = path.join(dir, 'old-plugin-version');

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "seekwing",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DeepSeek subagents for Codex: background ACP or visible Harness Desktop sessions, with independent review.",
   "extensions": {
     "com.openai": {

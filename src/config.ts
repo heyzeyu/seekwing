@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
-export const VERSION = '0.2.0';
+export const VERSION = '0.2.1';
 export type PermissionMode = 'read-only' | 'workspace-write';
 export type SessionMode = 'background' | 'desktop';
 export interface Config {

@@ -191,8 +191,9 @@ export class TaskManager {
     job.permissions.clear();
     job.task.pendingPermissions = [];
     await this.save(job);
-    await job.worker?.cancel();
+    if (terminal(job.task.status)) return;
     job.forceTimer = setTimeout(() => { void job.worker?.stop().catch(() => {}); }, this.config.cancelGraceMs);
+    await job.worker?.cancel();
   }
 
   private async execute(job: Job, release?: () => Promise<void>): Promise<void> {
@@ -253,7 +254,7 @@ export class TaskManager {
       delete task.desktopAttention;
       try {
         await worker.stop();
-        if (task.cancellation) {
+        if (task.cancellation && (task.cancellation === 'timeout' || outcome !== 'completed')) {
           outcome = task.cancellation === 'timeout' ? 'failed' : 'cancelled';
           if (task.cancellation === 'timeout') task.error = 'Task deadline exceeded; the owned Harness turn has stopped.';
         }
