@@ -70,6 +70,18 @@ test('doctor surfaces native startup warnings while redacting credentials', asyn
   assert.ok(!JSON.stringify(diagnostic).includes('fake-sensitive-value'));
 });
 
+test('doctor survives removal of the server working directory during a plugin upgrade', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'seekwing-upgrade-'));
+  const originalCwd = path.join(dir, 'old-plugin-version');
+  await mkdir(originalCwd);
+  const c = await connect(path.join(dir, 'state'), { serverCwd: originalCwd });
+  t.after(async () => { await c.close(); await rm(dir, { recursive: true, force: true }); });
+  assert.equal((await c.call('doctor')).protocol.protocolVersion, 1);
+  await rm(originalCwd, { recursive: true });
+  assert.equal((await c.call('doctor')).protocol.protocolVersion, 1);
+  assert.equal((await c.call('list_tasks')).tasks.length, 0);
+});
+
 test('cancel, cross-process control, and serialization of session follow-ups', async (t) => {
   const c = await setup(t);
   const first = await c.call('start_task', { workspace: c.workspace, instruction: 'SLOW' });

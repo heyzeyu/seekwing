@@ -154,7 +154,9 @@ export class AcpWorker {
 }
 
 export async function doctor(config: Config) {
-  const worker = new AcpWorker(config, 'doctor-' + process.pid, process.cwd(), 'read-only', () => {}, async () => ({ outcome: { outcome: 'cancelled' } }));
+  // Plugin upgrades can remove the running server's original working directory.
+  // Diagnostics need no project files, so use the stable, private state root.
+  const worker = new AcpWorker(config, 'doctor-' + process.pid, config.stateDir, 'read-only', () => {}, async () => ({ outcome: { outcome: 'cancelled' } }));
   try {
     const protocol = await worker.start();
     await worker.stop();

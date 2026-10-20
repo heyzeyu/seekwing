@@ -4,9 +4,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 export const repo = fileURLToPath(new URL('../', import.meta.url));
-export async function connect(stateDir, { native = false, extraEnv = {} } = {}) {
+export async function connect(stateDir, { native = false, extraEnv = {}, serverCwd = repo } = {}) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([, value]) => typeof value === 'string'));
-  const transport = new StdioClientTransport({ command: process.execPath, args: [path.join(repo, 'dist/seekwing.mjs'), 'mcp'], cwd: repo,
+  const transport = new StdioClientTransport({ command: process.execPath, args: [path.join(repo, 'dist/seekwing.mjs'), 'mcp'], cwd: serverCwd,
     env: { ...env, SEEKWING_STATE_DIR: stateDir,
       ...(!native ? { SEEKWING_DSH_COMMAND: process.execPath, SEEKWING_DSH_ARGS: JSON.stringify([path.join(repo, 'test/fake-acp.mjs')]), TEST_API_KEY: 'fake-sensitive-value-123456789' } : {}), ...extraEnv }, stderr: 'pipe' });
   let stderr = '';

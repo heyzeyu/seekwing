@@ -1,6 +1,6 @@
 {
   "name": "seekwing",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "DeepSeek subagents for Codex, with independent review.",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
