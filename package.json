@@ -1,13 +1,31 @@
 {
   "name": "seekwing",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DeepSeek subagents for Codex, over MCP and the official Harness ACP.",
   "type": "module",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/heyzeyu/seekwing.git" },
-  "engines": { "node": ">=22" },
-  "bin": { "seekwing": "dist/seekwing.mjs" },
-  "files": ["dist", "skills", "plugin.json", "mcp.json", ".codex-plugin", ".mcp.json", "README.md", "README.zh-CN.md", "LICENSE"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/heyzeyu/seekwing.git"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "seekwing": "dist/seekwing.mjs"
+  },
+  "files": [
+    "dist",
+    "assets",
+    "skills",
+    "plugin.json",
+    "mcp.json",
+    ".codex-plugin",
+    ".mcp.json",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "tsc --noEmit",

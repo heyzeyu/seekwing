@@ -1,12 +1,14 @@
 # SeekWing
 
+<img src="assets/seekwing-logo.png" width="128" alt="SeekWing: DeepSeek whale with a plugin badge">
+
 **DeepSeek subagents for Codex.** Delegate with MCP. Execute with official ACP. Review with Codex.
 
 [简体中文](README.zh-CN.md) · [MIT](LICENSE)
 
 SeekWing lets Codex assign scoped work to DeepSeek Harness, wait for results, continue the same session with corrections, and independently check files and tests. **Seek** comes from DeepSeek; **Wing** is your coding wingman.
 
-**v0.1.0 is implemented.** Real generation, persistent session resume, code edits and native read-only write denial have been tested on macOS with Harness Desktop **0.2.1-rc.2**, Node **24.12.0** and `deepseek-official/deepseek-flash`. The protocol fixture also runs in Linux CI. Windows and other Harness versions have not been tested.
+**v0.1.1 includes the plugin logo.** Real generation, persistent session resume, code edits and native read-only write denial have been tested on macOS with Harness Desktop **0.2.1-rc.2**, Node **24.12.0** and `deepseek-official/deepseek-flash`. The protocol fixture also runs in Linux CI. Windows and other Harness versions have not been tested.
 
 ```mermaid
 flowchart LR

@@ -1,12 +1,14 @@
 # SeekWing · 寻翼
 
+<img src="assets/seekwing-logo.png" width="128" alt="SeekWing：DeepSeek 蓝鲸与插件拼图徽标">
+
 **让 DeepSeek 成为 Codex 的子代理。Codex 派任务，DeepSeek 执行，Codex 复核。**
 
 [English](README.md) · [MIT](LICENSE)
 
 Seek 来自 DeepSeek，Wing 代表搭档和僚机。插件采用 **MCP 服务 + 委派复核 Skill**，通过官方 ACP 启动 DeepSeek Harness。终端命令用于启动 MCP 和诊断连接。
 
-**v0.1.0 已实现并实测**：在 macOS、Node 24.12.0、Harness Desktop 0.2.1-rc.2 和 `deepseek-official/deepseek-flash` 上，验证了真实生成、同一会话续聊、修改代码，以及原生只读沙箱拒绝写入。协议模拟测试也在 Linux CI 中运行；Windows 和其他 Harness 版本尚未实测。
+**v0.1.1 已加入插件 Logo**：在 macOS、Node 24.12.0、Harness Desktop 0.2.1-rc.2 和 `deepseek-official/deepseek-flash` 上，验证了真实生成、同一会话续聊、修改代码，以及原生只读沙箱拒绝写入。协议模拟测试也在 Linux CI 中运行；Windows 和其他 Harness 版本尚未实测。
 
 ```mermaid
 flowchart LR

@@ -1,0 +1,11 @@
+# SeekWing logo
+
+`seekwing-logo.png` is the transparent square listing and composer icon: a DeepSeek-blue whale with a separate navy plugin puzzle badge. It was made with the built-in ImageGen tool, using the official Harness Desktop whale icon as the visual reference. Original size: 1254 × 1254 pixels, RGBA PNG.
+
+The DeepSeek whale is a third-party brand identifier, not an original SeekWing trademark or MIT-licensed source code. DeepSeek brand assets remain subject to their [official usage guidelines](https://github.com/deepseek-ai/awesome-deepseek-integration/blob/main/docs/_logo%20svg/guidelines.md). SeekWing is an independent integration, not an official DeepSeek or OpenAI product.
+
+## Generation prompt
+
+```text
+Use case: logo-brand / compositing. Create the production logo for SeekWing, an independent Codex plugin integrating DeepSeek Harness. Input image 1 is the official DeepSeek Harness app icon: use ONLY its recognizable whale silhouette as the visual reference. Preserve the whale's distinctive head, white smiling mouth, eye, curved body, small upper fin, and raised split tail; do not invent a new mascot. Replace the gray whale material with the official DeepSeek periwinkle-blue #4D6BFE and remove the old rounded-square app background entirely. Primary request: a clean, premium, highly memorable square 1:1 plugin logo combining the DeepSeek whale with a clearly readable extension/plugin symbol. Composition: large intact blue whale centered, generous safe margin, plus one separate small deep-navy circular badge at the lower-right with a bold white jigsaw puzzle-piece silhouette inside; the badge has a clean narrow white separation ring so it remains distinct against the whale. Keep the badge smaller than the whale, approximately 24 percent of the total mark width, and do not cover the whale's eye, face or tail. The badge is added beside the original whale, never cut into or merged into its geometry. Flat vector-like fills, optically balanced shapes, smooth crisp edges, contemporary developer-tool branding, excellent legibility at 32px and 64px. No wordmark, no letters, no watermark, no text, no mockup, no 3D extrusion, no heavy shadows, no extra symbols. Output a single finished logo only, on a genuinely transparent background (not a white background or a transparency checkerboard). Square 1024x1024 composition.
+```
