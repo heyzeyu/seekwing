@@ -9,6 +9,7 @@ const result = await build({
   target: 'node22',
   format: 'esm',
   bundle: true,
+  loader: { '.html': 'text' },
   minify: true,
   legalComments: 'eof',
   metafile: true,

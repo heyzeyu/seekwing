@@ -4,6 +4,7 @@ export type TaskStatus = 'starting' | 'running' | 'needs_attention' | 'cancellin
 export const terminal = (status: TaskStatus): boolean => ['completed', 'incomplete', 'failed', 'cancelled', 'interrupted'].includes(status);
 
 export interface TaskInput {
+  title?: string;
   backend?: Backend;
   workspace: string;
   instruction: string;
@@ -14,6 +15,12 @@ export interface TaskInput {
   reasoningEffort?: string;
   timeoutSeconds: number;
   idempotencyKey?: string;
+}
+
+export interface TaskOrigin {
+  client: string;
+  threadId?: string;
+  source: 'mcp-metadata' | 'explicit' | 'environment' | 'unknown';
 }
 
 export interface Permission {
@@ -28,6 +35,12 @@ export interface Task {
   backend?: Backend;
   schemaVersion: 1;
   runId: string;
+  title?: string;
+  rootRunId?: string;
+  /** Original delegating chat, preserved across follow-ups. Not an ACL. */
+  origin?: TaskOrigin;
+  /** Caller that submitted this individual turn. */
+  submittedBy?: TaskOrigin;
   parentRunId?: string;
   ownerPid: number;
   sessionId?: string;

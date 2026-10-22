@@ -5,7 +5,8 @@ import { createWorker, sessionLockKey } from './backends.js';
 import type { Worker } from './worker.js';
 import { sessionModeFor, workspacePath, type Config } from './config.js';
 import { Store } from './store.js';
-import { terminal, type Task, type TaskInput } from './types.js';
+import { unknownOrigin } from './origin.js';
+import { terminal, type Task, type TaskInput, type TaskOrigin } from './types.js';
 
 interface Job {
   task: Task;
@@ -54,7 +55,7 @@ export class TaskManager {
     if (!this.unpersisted.size && ![...this.jobs.values()].some(other => other !== job && other.task.persistenceError)) this.storageFailure = undefined;
   }
 
-  async start(input: TaskInput, parent?: Task): Promise<Task> {
+  async start(input: TaskInput, parent?: Task, caller: TaskOrigin = unknownOrigin()): Promise<Task> {
     if (this.closed) throw new Error('SeekWing is shutting down.');
     const workspace = await workspacePath(this.config, input.workspace);
     if (!input.instruction.trim()) throw new Error('instruction must not be empty.');
@@ -64,6 +65,9 @@ export class TaskManager {
     const now = new Date().toISOString();
     const task: Task = {
       schemaVersion: 1, runId, parentRunId: parent?.runId, ownerPid: process.pid, sessionId: parent?.sessionId,
+      title: input.title ?? parent?.title ?? `${backend === 'grok' ? 'Grok' : 'DeepSeek'} task`,
+      rootRunId: parent?.rootRunId ?? parent?.runId ?? runId,
+      origin: parent ? parent.origin ?? unknownOrigin() : caller, submittedBy: caller,
       backend, sessionMode,
       workspace, permissionMode: input.permissionMode, configuredDefaultRoute: backend === 'grok'
         ? { provider: 'grok-cli', model: this.config.grokModel ?? 'native-default' }
@@ -78,7 +82,7 @@ export class TaskManager {
     const submission = { ...identity, sessionMode: task.sessionMode, workspace, parentRunId: parent?.runId, ...(backend === 'grok' ? { backend } : {}) };
     if (input.idempotencyKey) {
       const existing = await this.store.findKey(input.idempotencyKey, submission);
-      if (existing) return this.get(existing).catch(() => { throw new Error(`Idempotent task ${existing} has uncertain admission. Inspect state; do not automatically resubmit.`); });
+      if (existing) return this.idempotentResult(existing, caller);
     }
     if (this.closed) throw new Error('SeekWing is shutting down.');
     if (this.storageFailure) throw new Error('SeekWing task storage is unavailable. Restore storage and restart this MCP before starting another task. ' + this.storageFailure);
@@ -93,7 +97,7 @@ export class TaskManager {
         if (claimed !== runId) {
           this.jobs.delete(runId);
           // This caller did not admit a task. Keep lookup rejection outside the creator's failure handler.
-          return this.get(claimed).catch(() => { throw new Error(`Idempotent task ${claimed} has uncertain admission. Inspect state; do not automatically resubmit.`); });
+          return this.idempotentResult(claimed, caller);
         }
         job.admitted = true;
       }
@@ -116,14 +120,22 @@ export class TaskManager {
     }
   }
 
-  async reply(runId: string, instruction: string, acceptance?: string, idempotencyKey?: string, timeoutSeconds?: number): Promise<Task> {
+  private async idempotentResult(runId: string, caller: TaskOrigin): Promise<Task> {
+    const task = await this.get(runId).catch(() => { throw new Error(`Idempotent task ${runId} has uncertain admission. Inspect state; do not automatically resubmit.`); });
+    if (caller.threadId && task.submittedBy?.threadId && caller.threadId !== task.submittedBy.threadId) {
+      throw new Error('This idempotencyKey belongs to a different calling chat. Use a distinct key for a separate assignment.');
+    }
+    return task;
+  }
+
+  async reply(runId: string, instruction: string, acceptance?: string, idempotencyKey?: string, timeoutSeconds?: number, caller: TaskOrigin = unknownOrigin()): Promise<Task> {
     const parent = await this.get(runId);
     if (!terminal(parent.status)) throw new Error('Wait for the current turn to finish before replying.');
     if (!parent.sessionId) throw new Error('This task has no resumable native session.');
     return this.start({ backend: parent.backend ?? 'deepseek', workspace: parent.workspace, permissionMode: parent.permissionMode,
       sessionMode: parent.sessionMode ?? 'background',
       modelValue: parent.modelValue, reasoningEffort: parent.reasoningEffort,
-      instruction, acceptance, idempotencyKey, timeoutSeconds: timeoutSeconds ?? parent.timeoutSeconds }, parent);
+      instruction, acceptance, idempotencyKey, timeoutSeconds: timeoutSeconds ?? parent.timeoutSeconds }, parent, caller);
   }
 
   private snapshot(task: Task): Task {
@@ -144,12 +156,12 @@ export class TaskManager {
     return task ? this.snapshot(task) : this.store.get(runId);
   }
 
-  async list(limit: number): Promise<Task[]> {
-    const saved = await this.store.list(limit).catch((error) => { if (!this.unpersisted.size) throw error; return []; });
+  async list(limit: number, matches: (task: Task) => boolean = () => true): Promise<Task[]> {
+    const saved = await this.store.list(limit, matches).catch((error) => { if (!this.unpersisted.size) throw error; return []; });
     const tasks = new Map(saved.map(task => [task.runId, task]));
     for (const task of this.unpersisted.values()) tasks.set(task.runId, task);
     for (const job of this.jobs.values()) if (job.admitted) tasks.set(job.task.runId, this.liveSnapshot(job));
-    return [...tasks.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit).map(task => this.snapshot(task));
+    return [...tasks.values()].filter(matches).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit).map(task => this.snapshot(task));
   }
 
   async wait(runId: string, seconds: number): Promise<Task> {

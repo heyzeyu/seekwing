@@ -8,6 +8,8 @@
       ],
       "cwd": ".",
       "env_vars": [
+        "CODEX_THREAD_ID",
+        "CODEX_SESSION_ID",
         "DEEPSEEK_API_KEY",
         "SEEKWING_DSH_COMMAND",
         "SEEKWING_DSH_ARGS",

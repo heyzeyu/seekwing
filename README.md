@@ -8,7 +8,9 @@
 
 SeekWing lets Codex assign scoped work to DeepSeek Harness or Grok, wait for results, continue the same session with corrections, and independently check files and tests. **Seek** comes from DeepSeek; **Wing** is your coding wingman.
 
-**v0.3.0 adds the Grok adapter:** one MCP toolset with `backend: deepseek | grok`, shared durable tasks and independent runtime configuration. Existing DeepSeek defaults and history stay compatible. [Implementation and real test evidence](docs/grok-adapter.zh-CN.md).
+**v0.4.0 adds caller attribution, capability discovery and optional MCP Apps task cards.** See [visibility and ownership](docs/task-visibility.zh-CN.md). Cards render only in compatible hosts; native Codex sidebar chats require an explicit host-created supervisor workflow.
+
+**v0.3.0 added the Grok adapter:** one MCP toolset with `backend: deepseek | grok`, shared durable tasks and independent runtime configuration. Existing DeepSeek defaults and history stay compatible. [Implementation and real test evidence](docs/grok-adapter.zh-CN.md).
 
 Visible Desktop sessions were introduced in v0.2.0 alongside background ACP. Real generation, same-session follow-up and file edits have been verified on macOS with Harness Desktop **0.2.1-rc.2**, Node **24.12.0** and DeepSeek Flash / High. Windows and other Harness versions remain untested.
 
@@ -112,6 +114,7 @@ The skill makes scope and acceptance criteria explicit. Default tasks are read-o
 
 | Tool | Purpose |
 | --- | --- |
+| `list_backends` | Inspect adapter capabilities and current caller attribution without starting a runtime. |
 | `doctor` | Check the selected background ACP or Desktop companion handshake without generation. |
 | `inspect_models` | Read runtime-specific model/reasoning options; Desktop creates no empty session. |
 | `start_task` | Start a task and return its run ID; defaults to read-only and a 600-second deadline. |
@@ -120,12 +123,13 @@ The skill makes scope and acceptance criteria explicit. Default tasks are read-o
 | `reply_task` | Resume a finished run's session, preserving workspace and permission mode. |
 | `cancel_task` | Cancel and wait for the owned worker to stop; does not undo edits. |
 | `respond_to_permission` | Select an advertised one-time permission decision. Never automatically approved. |
-| `list_tasks` | Read durable runs, including interrupted runs after a restart. |
+| `list_tasks` | Filter durable runs by current chat/all, backend, status or root run, before limiting. |
 
 Example `start_task` arguments:
 
 ```json
 {
+  "title": "Fix the addition bug",
   "backend": "deepseek",
   "workspace": "/absolute/path/to/project",
   "instruction": "Fix the addition bug in sum.mjs. Change only that file.",
@@ -142,6 +146,14 @@ Creation is an acknowledgement, not completion. Reuse an idempotency key only fo
 A confirmed `end_turn` response stays `completed` if a user cancel races with completion; the cancellation request is still recorded. Task deadlines still fail expired work.
 
 `completed` means the native turn ended and SeekWing released its worker. Desktop conversations remain open. **Codex still checks the acceptance criteria.** Token-limit stops are `incomplete`; model/transport errors are `failed`. Failed tool calls remain visible even in a completed turn. An interrupted task is never automatically replayed: inspect its workspace before resuming.
+
+## Ownership and visible progress
+
+Task records retain the original delegating `origin`, this turn's `submittedBy`, a user-visible `title`, and `rootRunId`. Caller identity comes from supported per-request metadata, explicit `callerThreadId`, or the MCP process environment, in that order. A shared server should use per-request identity; the process environment can be stale. Only pass the actual calling chat ID. This is attribution, not authentication or an ACL. Old records are not retroactively assigned to a chat.
+
+`list_tasks` defaults to `scope: auto`: current-chat origin when known, otherwise an explicitly labeled all-local listing. `scope: current` returns no claimed tasks if identity is missing; `scope: all` also includes legacy/unidentified runs. Replies preserve origin and record the current submitter separately.
+
+Task tools return a self-contained MCP Apps card for compatible hosts, with status, read-only refresh, paginated output and tool evidence. Active visible cards refresh every five seconds, pause when hidden and stop on errors or completion. Text/structured results remain the fallback. No permission grants, extra model calls, public deployment or native Codex chats are performed by the card. A separate Codex supervisor chat is an optional host workflow documented in the skill, not an external native-agent registration API.
 
 ## Permissions and data
 
@@ -175,6 +187,7 @@ History listing reads at most eight records concurrently and retains only the re
 
 | Variable | Default / purpose |
 | --- | --- |
+| `CODEX_THREAD_ID` / `CODEX_SESSION_ID` | Host environment fallback for caller attribution; per-request metadata and explicit caller ID take precedence. |
 | `SEEKWING_BACKEND` | `deepseek` (default) or `grok`; overridable per new task. |
 | `SEEKWING_GROK_COMMAND` | Absolute CLI path; prefers `~/.grok/bin/grok`, then `PATH`. |
 | `SEEKWING_GROK_ARGS` | Trusted launcher prefix arguments as a JSON array, default `[]`. |
@@ -208,7 +221,7 @@ npm test
 npm pack --dry-run
 ```
 
-63 deterministic tests use independent DeepSeek/Grok ACP wire fixtures and a native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation and permission rejection, deadlines, output caps, redaction, workspace-root validation and crash recovery. Grok coverage includes noninteractive auth, exact model selection, backend isolation, legacy history, refusing prompts under an unexpected sandbox, and cross-process cancellation. No provider credentials are needed.
+71 deterministic tests use independent DeepSeek/Grok ACP wire fixtures and a native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation and permission rejection, deadlines, output caps, redaction, workspace-root validation and crash recovery. Grok coverage includes noninteractive auth, exact model selection, backend isolation, legacy history, refusing prompts under an unexpected sandbox, and cross-process cancellation. No provider credentials are needed.
 
 The opt-in smoke test **calls DeepSeek or Grok and consumes normal provider usage**. It edits only its generated scratch workspace and independently reruns the example test:
 

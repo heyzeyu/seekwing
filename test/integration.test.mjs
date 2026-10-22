@@ -18,7 +18,7 @@ async function setup(t, extraEnv = {}) {
 
 test('MCP discovery, actual completion, redaction, persisted context and idempotent retry', async (t) => {
   const c = await setup(t);
-  assert.equal((await c.client.listTools()).tools.length, 9);
+  assert.equal((await c.client.listTools()).tools.length, 10);
   assert.equal((await c.call('doctor')).protocol.agentInfo.version, 'fixture');
   const input = { workspace: c.workspace, instruction: 'HELLO', idempotencyKey: 'first' };
   const first = await c.call('start_task', input);

@@ -38,13 +38,13 @@ export class Store {
     }
     return task;
   }
-  async list(limit: number): Promise<Task[]> {
+  async list(limit: number, matches: (task: Task) => boolean = () => true): Promise<Task[]> {
     const files = (await readdir(path.join(this.config.stateDir, 'runs'))).filter((name) => /^sw-[0-9a-f-]{36}\.json$/.test(name));
     const recent: Task[] = [];
     // History has no expiry: bound both open reads and the full evidence retained in memory.
     for (let offset = 0; offset < files.length; offset += 8) {
       const batch = await Promise.all(files.slice(offset, offset + 8).map(name => this.get(name.slice(0, -5)).catch(() => undefined)));
-      recent.push(...batch.filter((task): task is Task => !!task));
+      recent.push(...batch.filter((task): task is Task => !!task && matches(task)));
       recent.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       recent.splice(limit);
     }

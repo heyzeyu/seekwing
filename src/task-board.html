@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SeekWing · 委派任务</title>
+<style>
+  :root{color-scheme:light dark;font-family:var(--font-sans,system-ui,-apple-system,sans-serif);color:var(--color-text-primary,#182235);background:var(--color-background-primary,#fff);font-size:14px}
+  *{box-sizing:border-box}body{margin:0;padding:18px}header,.actions,.row{display:flex;align-items:center;gap:10px}header{justify-content:space-between;margin-bottom:16px}.brand{display:flex;align-items:center;gap:10px}.mark{background:#4d6bfe;color:#fff;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;font-weight:800}h1{font-size:16px;margin:0}h2{font-size:15px;margin:0;overflow-wrap:anywhere}.sub,.muted{font-size:12px;color:var(--color-text-secondary,#637085)}.sub{margin-top:3px}.actions{flex-wrap:wrap}button{font:inherit;border:1px solid var(--color-border-primary,#dce1eb);background:var(--color-background-primary,#fff);color:inherit;border-radius:8px;padding:7px 11px;cursor:pointer}button:hover{border-color:#4d6bfe}button:focus-visible{outline:2px solid #4d6bfe;outline-offset:2px}button:disabled{opacity:.5;cursor:default}label{font-size:12px;display:flex;align-items:center;gap:4px}input{accent-color:#4d6bfe}.card{border:1px solid var(--color-border-primary,#e2e6ef);border-radius:12px;padding:14px;margin:10px 0}.row{justify-content:space-between;align-items:flex-start}.badge{font-size:11px;white-space:nowrap;background:var(--color-background-secondary,#f1f4fa);border-radius:6px;padding:4px 7px}.badge[data-active=true]{color:#3150cf;background:#edf1ff}.facts{display:grid;grid-template-columns:90px minmax(0,1fr);gap:7px 10px;margin:13px 0;font-size:12px}.facts dt{color:var(--color-text-secondary,#637085)}.facts dd{margin:0;overflow-wrap:anywhere}.notice{border-left:3px solid #4d6bfe;padding:8px 10px;background:var(--color-background-secondary,#f6f8fc);margin:12px 0;font-size:12px;line-height:1.6}pre{font:12px/1.65 ui-monospace,SFMono-Regular,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:350px;overflow:auto;background:var(--color-background-secondary,#f6f8fc);padding:12px;border-radius:8px}#error{color:#b42318;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}footer{font-size:11px;color:var(--color-text-secondary,#637085);margin-top:14px}details{margin-top:10px}summary{cursor:pointer;font-size:12px}.empty{padding:24px 0;text-align:center;color:var(--color-text-secondary,#637085)}[hidden]{display:none!important}
+  @media(prefers-color-scheme:dark){:root{color:var(--color-text-primary,#e9edf5);background:var(--color-background-primary,#171b24)}button{background:var(--color-background-primary,#171b24);border-color:var(--color-border-primary,#3a4355)}.card{border-color:var(--color-border-primary,#3a4355)}pre,.notice,.badge{background:var(--color-background-secondary,#222936)}.badge[data-active=true]{background:#273458;color:#bdcaff}}
+  @media(max-width:430px){header{align-items:flex-start;flex-direction:column}.facts{grid-template-columns:70px minmax(0,1fr)}}
+</style>
+</head>
+<body>
+<header><div class="brand"><span class="mark" aria-hidden="true">W</span><div><h1>SeekWing</h1><div class="sub">委派执行 · Codex 核验</div></div></div><div class="actions"><button id="back" hidden>任务列表</button><button id="refresh" disabled>刷新</button><label><input id="auto" type="checkbox" checked>自动刷新</label></div></header>
+<p id="scope" class="muted"></p><div id="error" role="alert"></div>
+<main id="tasks" aria-live="polite"><p class="empty">等待任务数据…</p></main>
+<footer id="foot">任务结束后仍需 Codex 独立检查文件、测试和验收条件。</footer>
+<script>
+(() => {
+  const el = id => document.getElementById(id);
+  const statuses = {starting:'启动中',running:'执行中',needs_attention:'等待处理',cancelling:'取消中',completed:'执行结束 · 待核验',incomplete:'未完成',failed:'失败',cancelled:'已取消',interrupted:'已中断'};
+  const active = task => ['starting','running','cancelling'].includes(task.status);
+  let ready = false, busy = false, query, listQuery, snapshot, timer, rpcId = 0, hostOrigin;
+  const pending = new Map();
+  const node = (tag, text, cls) => { const n = document.createElement(tag); if(text !== undefined) n.textContent = String(text); if(cls) n.className = cls; return n; };
+  const send = message => window.parent.postMessage({jsonrpc:'2.0',...message}, hostOrigin && hostOrigin !== 'null' ? hostOrigin : '*');
+  function request(method, params) {
+    return new Promise((resolve,reject) => {
+      const id = ++rpcId;
+      const timeout = setTimeout(() => { pending.delete(id); reject(new Error('连接超时，请手动刷新。')); }, 15000);
+      pending.set(id,{resolve,reject,timeout}); send({id,method,params});
+    });
+  }
+  function error(e) { clearTimeout(timer); el('error').textContent = e?.message || String(e); }
+  function schedule() {
+    clearTimeout(timer);
+    const rows = snapshot?.tasks || (snapshot?.runId ? [snapshot] : []);
+    if(ready && query && !busy && !document.hidden && el('auto').checked && rows.some(active)) timer = setTimeout(refresh, 5000);
+  }
+  function fact(dl, title, value) { dl.append(node('dt',title),node('dd',value || '未知')); }
+  function render(data) {
+    snapshot = data; el('tasks').replaceChildren();
+    const rows = data.tasks || (data.runId ? [data] : []);
+    el('scope').textContent = data.scope === 'current' ? '本聊天派发的任务' : data.scope === 'all' ? '本机全部任务' : '单个运行记录';
+    if(data.ownershipWarning) el('tasks').append(node('p',data.ownershipWarning,'notice'));
+    if(!rows.length) el('tasks').append(node('p','暂无符合条件的任务','empty'));
+    for(const task of rows) {
+      const card = node('article',undefined,'card'), head = node('div',undefined,'row');
+      const badge = node('span',statuses[task.status] || task.status,'badge'); badge.dataset.active = String(active(task));
+      head.append(node('h2', task.title || `${task.backend || 'DeepSeek'} task`),badge);card.append(head);
+      const dl = node('dl',undefined,'facts');
+      fact(dl,'执行方',`${task.backend === 'grok' ? 'Grok' : 'DeepSeek'} · ${task.sessionMode || 'background'}`);
+      fact(dl,'权限',task.permissionMode === 'workspace-write' ? '可编辑工作目录' : '只读');
+      fact(dl,'运行编号',task.runId); fact(dl,'来源聊天',task.origin?.threadId || '未知（旧任务或宿主未提供）');
+      if(task.submittedBy?.threadId && task.submittedBy.threadId !== task.origin?.threadId) fact(dl,'本轮发起',task.submittedBy.threadId);
+      fact(dl,'工作目录',task.workspace);
+      if(task.sessionId) fact(dl,'原生会话',task.sessionId);
+      if(task.modelValue) fact(dl,'模型',task.modelValue);
+      card.append(dl);
+      if(data.tasks) {
+        const button=node('button','查看进度和输出');button.onclick=()=>load({name:'get_task',arguments:{runId:task.runId}});card.append(button);
+      } else {
+        if(task.status === 'needs_attention') card.append(node('p',task.desktopAttention || '存在待处理权限请求。请在聊天中检查具体操作并处理；本卡片不会自动批准。','notice'));
+        for(const field of ['error','cleanupError','persistenceError']) if(task[field]) card.append(node('p',task[field],'notice'));
+        const out=node('pre',task.output || '暂无输出');out.setAttribute('aria-label','代理输出（未经独立核验）');card.append(out);
+        if(task.outputTruncated) card.append(node('p','输出已达到保存上限；请结合文件及工具证据核查。','notice'));
+        const paging=node('div',undefined,'actions');
+        if(task.outputOffset > 0) {const b=node('button','返回输出开头');b.onclick=()=>load({name:'get_task',arguments:{runId:task.runId}});paging.append(b);}
+        if(task.nextOutputOffset != null) {const b=node('button','下一页输出');b.onclick=()=>load({name:'get_task',arguments:{runId:task.runId,outputOffset:task.nextOutputOffset}});paging.append(b);}
+        card.append(paging);
+        if(task.toolCalls?.length) {const details=node('details');details.append(node('summary',`最近工具记录（${task.toolCallCount} 次）`),node('pre',JSON.stringify(task.toolCalls,null,2)));card.append(details);}
+        if(task.status === 'completed') card.append(node('p','执行方已结束本轮。验收结果以 Codex 独立核验为准。','notice'));
+      }
+      el('tasks').append(card);
+    }
+    el('back').hidden = !!data.tasks || !listQuery;
+    el('foot').textContent = `快照更新于 ${new Date().toLocaleTimeString()} · 执行结束不代表验收通过。`;
+    schedule();
+  }
+  function receive(response, fromHost = false) {
+    if(response?.isError) throw new Error((response.content || []).filter(x=>x.type==='text').map(x=>x.text).join('\n') || '无法读取任务。');
+    const data = response?.structuredContent;
+    if(!data || (!Array.isArray(data.tasks) && !data.runId)) return;
+    if(Array.isArray(data.tasks)) {
+      listQuery = {name:'list_tasks',arguments:data.filters || {scope:data.scope || 'current'}}; query=listQuery;
+    } else if(fromHost || !query || query.name !== 'get_task' || query.arguments.runId !== data.runId) {
+      query = {name:'get_task',arguments:{runId:data.runId}};
+    }
+    el('error').textContent='';render(data);
+  }
+  async function load(next) {
+    if(!ready || busy) return;
+    clearTimeout(timer); busy=true;el('refresh').disabled=true;
+    const previous=query;query=next;
+    try {receive(await request('tools/call',next));}
+    catch(e){query=previous;error(e);return;}
+    finally{busy=false;el('refresh').disabled=!ready;}
+    schedule();
+  }
+  function refresh(){if(query) void load(query);}
+  el('refresh').onclick=refresh;el('back').onclick=()=>listQuery && load(listQuery);
+  el('auto').onchange=schedule;document.addEventListener('visibilitychange',schedule);
+  window.addEventListener('pagehide',()=>{clearTimeout(timer);for(const p of pending.values()){clearTimeout(p.timeout);p.reject(new Error('视图已关闭'));}pending.clear();});
+  window.addEventListener('message',event=>{
+    if(event.source!==window.parent || (hostOrigin && event.origin!==hostOrigin)) return;
+    const msg=event.data;if(!msg || msg.jsonrpc!=='2.0') return;
+    if(msg.id !== undefined && pending.has(msg.id)) {
+      const p=pending.get(msg.id);pending.delete(msg.id);clearTimeout(p.timeout);
+      if(!hostOrigin) hostOrigin=event.origin;
+      if(msg.error)p.reject(new Error(msg.error.message || '宿主请求失败'));else p.resolve(msg.result);
+    } else if(msg.method==='ui/notifications/tool-result') {try{receive(msg.params,true);}catch(e){error(e);}}
+    else if(msg.method==='ui/resource-teardown') {clearTimeout(timer);ready=false;if(msg.id!==undefined)send({id:msg.id,result:{}});}
+  });
+  let lastHeight = 0;
+  const resize = () => {
+    const height = Math.ceil(document.body.getBoundingClientRect().height);
+    if(ready && height !== lastHeight) {lastHeight=height;send({method:'ui/notifications/size-changed',params:{height}});}
+  };
+  if(typeof ResizeObserver !== 'undefined') new ResizeObserver(resize).observe(document.body);
+  if(window.parent===window){error(new Error('此卡片需要支持 MCP Apps 的宿主。仍可通过 SeekWing 工具查询任务。'));return;}
+  request('ui/initialize',{appInfo:{name:'seekwing-task-board',version:'0.4.0'},appCapabilities:{},protocolVersion:'2026-01-26'})
+    .then(()=>{ready=true;el('refresh').disabled=false;send({method:'ui/notifications/initialized',params:{}});resize();schedule();})
+    .catch(error);
+})();
+</script>
+</body>
+</html>

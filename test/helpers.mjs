@@ -14,8 +14,8 @@ export async function connect(stateDir, { native = false, extraEnv = {}, serverC
   const client = new Client({ name: 'seekwing-test', version: '1.0.0' });
   await client.connect(transport);
   return { client, transport, stderr: () => stderr,
-    call: async (name, args = {}, { allowError = false } = {}) => {
-      const response = await client.callTool({ name, arguments: args }, undefined, { timeout: 55_000 });
+    call: async (name, args = {}, { allowError = false, meta } = {}) => {
+      const response = await client.callTool({ name, arguments: args, ...(meta ? { _meta: meta } : {}) }, undefined, { timeout: 55_000 });
       if (response.isError && !allowError) throw new Error(JSON.stringify(response.content));
       return response.isError ? response : response.structuredContent ?? JSON.parse(response.content[0].text);
     }, close: () => client.close() };

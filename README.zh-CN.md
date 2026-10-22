@@ -8,7 +8,9 @@
 
 Seek 来自 DeepSeek，Wing 代表搭档和僚机。插件采用 **MCP 服务 + 委派复核 Skill**，支持独立后台 ACP 和 Harness 桌面会话两种执行方式。终端命令用于启动 MCP、安装桌面伴随插件和诊断连接。
 
-**v0.3.0 新增 Grok 适配器**：同一组 MCP 工具支持 `backend: deepseek | grok`，共享任务、续聊、取消和权限处理；旧 DeepSeek 历史与默认行为保持兼容。[Grok 实测与实现说明](docs/grok-adapter.zh-CN.md)。
+**v0.4.0 新增任务来源追踪、能力查询和可选 MCP Apps 任务卡片。** [设计与显示边界](docs/task-visibility.zh-CN.md)。卡片需宿主支持；侧栏独立聊天通过用户明确要求后创建的 Codex 监督聊天实现，插件本身不创建聊天。
+
+**v0.3.0 引入 Grok 适配器**：同一组 MCP 工具支持 `backend: deepseek | grok`，共享任务、续聊、取消和权限处理；旧 DeepSeek 历史与默认行为保持兼容。[Grok 实测与实现说明](docs/grok-adapter.zh-CN.md)。
 
 v0.2.0 引入的桌面模式可在已运行的 Harness Host 中执行任务，并在工作区列表显示会话；独立后台 ACP 模式继续保留。macOS、Harness Desktop **0.2.1-rc.2**、Node **24.12.0** 上已验证真实生成、同会话续聊和编辑文件。Windows 和其他 Harness 版本尚未实测。
 
@@ -112,6 +114,7 @@ Skill 会明确工作区、允许范围和验收标准。分析默认只读；�
 
 | 工具 | 作用 |
 | --- | --- |
+| `list_backends` | 查询适配器能力、限制与调用聊天来源，不启动原生代理。 |
 | `doctor` | 检查所选模式的 ACP 或桌面伴随插件握手，不调用模型。 |
 | `inspect_models` | 读取所选模式的模型和推理选项；桌面模式不创建空会话。 |
 | `start_task` | 创建任务并返回 ID；默认只读、600 秒截止时间。 |
@@ -120,12 +123,13 @@ Skill 会明确工作区、允许范围和验收标准。分析默认只读；�
 | `reply_task` | 继续已结束任务的原会话，保留工作区和权限。 |
 | `cancel_task` | 取消并等待工作进程停止；不回滚文件。 |
 | `respond_to_permission` | 对原生权限请求作一次性选择，不自动批准。 |
-| `list_tasks` | 读取持久记录，包括服务重启后的中断任务。 |
+| `list_tasks` | 按当前聊天/全部、后端、状态或任务链过滤，再取最近记录。 |
 
 派发参数示例：
 
 ```json
 {
+  "title": "修复加法错误",
   "backend": "deepseek",
   "workspace": "/absolute/path/to/project",
   "instruction": "修复 sum.mjs 的加法错误，只修改这个文件。",
@@ -173,6 +177,7 @@ DeepSeek 后台模式设置 `DSH_PERMISSION_MODE` 和最后一层原生配置；
 
 | 环境变量 | 默认值 / 含义 |
 | --- | --- |
+| `CODEX_THREAD_ID` / `CODEX_SESSION_ID` | 调用聊天来源的环境变量后备值；请求元数据和明确传入的真实聊天编号优先。 |
 | `SEEKWING_BACKEND` | 默认 `deepseek`，可设为 `grok`；单次任务可覆盖。 |
 | `SEEKWING_GROK_COMMAND` | Grok 可执行文件绝对路径；优先 `~/.grok/bin/grok`，再查 `PATH`。 |
 | `SEEKWING_GROK_ARGS` | 可信启动前缀参数 JSON 数组，默认 `[]`。 |
@@ -206,7 +211,7 @@ npm test
 npm pack --dry-run
 ```
 
-63 项确定性测试使用独立的 DeepSeek/Grok ACP 模拟器和桌面 Host 适配器，覆盖双模式完成、桌面认证/会话隔离/取消/拒绝回退，以及生命周期、续聊、幂等、权限、会话锁、跨进程取消与权限拒绝、截止时间、输出截断、脱敏、工作区边界和崩溃恢复。Grok 回归额外覆盖非交互认证、精确模型选择、后端隔离、旧历史兼容、沙箱不匹配时拒绝发送任务和跨进程取消，不需要模型密钥。
+71 项确定性测试使用独立的 DeepSeek/Grok ACP 模拟器和桌面 Host 适配器，覆盖双模式完成、桌面认证/会话隔离/取消/拒绝回退，以及生命周期、续聊、幂等、权限、会话锁、跨进程取消与权限拒绝、截止时间、输出截断、脱敏、工作区边界和崩溃恢复。Grok 回归额外覆盖非交互认证、精确模型选择、后端隔离、旧历史兼容、沙箱不匹配时拒绝发送任务和跨进程取消，不需要模型密钥。
 
 可选实测**会调用真实 DeepSeek 或 Grok，消耗对应额度**，只修改自动生成的临时工作区，并独立重跑示例测试：
 
