@@ -1,13 +1,13 @@
 {
   "name": "seekwing",
-  "version": "0.2.3",
-  "description": "DeepSeek subagents for Codex: background ACP or visible Harness Desktop sessions, with independent review.",
+  "version": "0.3.0",
+  "description": "DeepSeek and Grok subagents for Codex, with persistent ACP tasks and independent review.",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "requires_local_executor": true,
   "interface": {
     "displayName": "SeekWing",
-    "shortDescription": "Delegate to DeepSeek. Review with Codex.",
+    "shortDescription": "Delegate to DeepSeek or Grok. Review with Codex.",
     "brandColor": "#4D6BFE",
     "composerIcon": "./assets/seekwing-logo.png",
     "logo": "./assets/seekwing-logo.png"

@@ -3,12 +3,19 @@ import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
-export const VERSION = '0.2.3';
+export const VERSION = '0.3.0';
+export type Backend = 'deepseek' | 'grok';
 export type PermissionMode = 'read-only' | 'workspace-write';
 export type SessionMode = 'background' | 'desktop';
 export interface Config {
+  backend: Backend;
   command: string;
   commandArgs: string[];
+  grokCommand: string;
+  grokArgs: string[];
+  grokHome: string;
+  grokModel?: string;
+  commandErrors: Partial<Record<Backend, string>>;
   stateDir: string;
   harnessHome: string;
   desktopEndpoint: string;
@@ -43,6 +50,29 @@ async function executable(file: string): Promise<boolean> {
   try { await access(file, constants.X_OK); return (await stat(file)).isFile(); } catch { return false; }
 }
 
+async function discoverCommand(explicit: string | undefined, preferred: string[], name: string, env: NodeJS.ProcessEnv): Promise<string> {
+  if (explicit) return explicit;
+  for (const candidate of [...preferred, ...(env.PATH || '').split(path.delimiter).filter(Boolean).map(dir => path.resolve(dir, name))]) {
+    if (await executable(candidate)) return candidate;
+  }
+  return '';
+}
+
+export async function requireCommand(config: Config, backend: Backend): Promise<void> {
+  if (config.commandErrors[backend]) throw new Error(config.commandErrors[backend]);
+  const command = backend === 'grok' ? config.grokCommand : config.command;
+  const name = backend === 'grok' ? 'SEEKWING_GROK_COMMAND' : 'SEEKWING_DSH_COMMAND';
+  if (!command) throw new Error(`${backend === 'grok' ? 'Official Grok CLI' : 'Official DeepSeek Harness CLI'} not found. Install it or set ${name} to its executable.`);
+  if (!path.isAbsolute(command) || !await executable(command)) throw new Error(`${name} must be an absolute executable path.`);
+}
+
+export function sessionModeFor(config: Config, backend: Backend, explicit?: SessionMode): SessionMode {
+  // A DeepSeek Desktop preference must not redirect an explicitly selected Grok task.
+  const mode = explicit ?? (backend === 'grok' ? 'background' : config.sessionMode);
+  if (backend === 'grok' && mode === 'desktop') throw new Error('Grok supports background ACP sessions only. Its native persisted history can be resumed in Grok; live Desktop attachment is not supported.');
+  return mode;
+}
+
 export function defaultStateDir(env: NodeJS.ProcessEnv = process.env): string {
   const base = process.platform === 'darwin'
     ? path.join(homedir(), 'Library', 'Application Support', 'SeekWing')
@@ -56,24 +86,27 @@ export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<
   const stateDir = defaultStateDir(env);
   const desktop = '/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh';
   // Prefer the actual Desktop CLI: a user-defined `dsh` can be an unrelated SSH wrapper.
-  let command = env.SEEKWING_DSH_COMMAND;
-  if (!command && process.platform === 'darwin' && await executable(desktop)) command = desktop;
-  if (!command) {
-    for (const dir of (env.PATH || '').split(path.delimiter)) {
-      const candidate = path.resolve(dir, process.platform === 'win32' ? 'dsh.exe' : 'dsh');
-      if (await executable(candidate)) { command = candidate; break; }
-    }
-  }
-  if (!command) throw new Error('Official DeepSeek Harness CLI not found. Install Harness or set SEEKWING_DSH_COMMAND to its executable.');
-  if (!path.isAbsolute(command) || !await executable(command)) throw new Error('SEEKWING_DSH_COMMAND must be an absolute executable path.');
-  const commandArgs: unknown = JSON.parse(env.SEEKWING_DSH_ARGS || '[]');
-  if (!Array.isArray(commandArgs) || !commandArgs.every((arg) => typeof arg === 'string')) throw new Error('SEEKWING_DSH_ARGS must be a JSON array of strings.');
+  const command = await discoverCommand(env.SEEKWING_DSH_COMMAND, process.platform === 'darwin' ? [desktop] : [], process.platform === 'win32' ? 'dsh.exe' : 'dsh', env);
+  const grokHome = path.resolve(env.SEEKWING_GROK_HOME || env.GROK_HOME || path.join(homedir(), '.grok'));
+  const grokCommand = await discoverCommand(env.SEEKWING_GROK_COMMAND, [path.join(homedir(), '.grok', 'bin', process.platform === 'win32' ? 'grok.exe' : 'grok')], process.platform === 'win32' ? 'grok.exe' : 'grok', env);
+  const commandErrors: Config['commandErrors'] = {};
+  const args = (key: string, backend: Backend): string[] => {
+    try {
+      const value: unknown = JSON.parse(env[key] || '[]');
+      if (!Array.isArray(value) || !value.every(arg => typeof arg === 'string')) throw new Error();
+      return value;
+    } catch { commandErrors[backend] = `${key} must be a JSON array of strings.`; return []; }
+  };
+  const commandArgs = args('SEEKWING_DSH_ARGS', 'deepseek');
+  const grokArgs = args('SEEKWING_GROK_ARGS', 'grok');
+  const backend = env.SEEKWING_BACKEND || 'deepseek';
+  if (backend !== 'deepseek' && backend !== 'grok') throw new Error('SEEKWING_BACKEND must be deepseek or grok.');
   const maxConcurrent = Number(env.SEEKWING_MAX_CONCURRENT || 2);
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 8) throw new Error('SEEKWING_MAX_CONCURRENT must be 1–8.');
   const sessionMode = env.SEEKWING_SESSION_MODE || 'background';
   if (sessionMode !== 'background' && sessionMode !== 'desktop') throw new Error('SEEKWING_SESSION_MODE must be background or desktop.');
   return {
-    command, commandArgs, stateDir,
+    backend, command, commandArgs, grokCommand, grokArgs, grokHome, grokModel: env.SEEKWING_GROK_MODEL || undefined, commandErrors, stateDir,
     harnessHome: path.resolve(env.SEEKWING_DSH_HOME || path.join(stateDir, 'harness')),
     desktopEndpoint: path.resolve(env.SEEKWING_DESKTOP_ENDPOINT || path.join(stateDir, 'desktop', 'endpoint.json')),
     sessionMode,

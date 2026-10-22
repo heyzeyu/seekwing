@@ -1,6 +1,6 @@
 {
   "name": "seekwing-desktop",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "SeekWing companion inside the official DeepSeek Harness Desktop Host",
   "type": "module",
   "main": "./index.mjs",

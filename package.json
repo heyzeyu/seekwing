@@ -1,7 +1,7 @@
 {
   "name": "seekwing",
-  "version": "0.2.3",
-  "description": "DeepSeek subagents for Codex, with background ACP and visible Harness Desktop sessions.",
+  "version": "0.3.0",
+  "description": "DeepSeek and Grok subagents for Codex, with persistent ACP tasks and independent review.",
   "type": "module",
   "license": "MIT",
   "repository": {

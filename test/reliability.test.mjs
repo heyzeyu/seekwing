@@ -18,6 +18,43 @@ await build({ stdin: { contents: 'export { Store } from "./src/store.ts"; export
 const { Store, TaskManager, loadConfig } = await import(pathToFileURL(path.join(bundleDir, 'core.mjs')).href);
 test.after(() => fs.rm(bundleDir, { recursive: true, force: true }));
 
+test('identical native session IDs remain isolated across DeepSeek and Grok', async t => {
+  const f = await fixture(t);
+  const config = await loadConfig({ ...f.config.env, SEEKWING_GROK_COMMAND: process.execPath,
+    SEEKWING_GROK_ARGS: JSON.stringify([path.join(repo, 'test/fake-grok.mjs')]), SEEKWING_GROK_HOME: path.join(f.root, 'grok') });
+  const manager = new TaskManager(config); await manager.init();
+  t.after(() => manager.shutdown());
+  const input = { workspace: f.workspace, instruction: 'HELLO', permissionMode: 'read-only', timeoutSeconds: 30 };
+  const deepseek = await manager.start({ ...input, backend: 'deepseek' });
+  const done = await manager.wait(deepseek.runId, 5);
+  assert.equal(done.status, 'completed');
+  config.env.SEEKWING_GROK_FIXTURE_SESSION_ID = done.sessionId;
+  const deepseekFollow = await manager.reply(deepseek.runId, 'SLOW');
+  const grok = await manager.start({ ...input, backend: 'grok', instruction: 'SLOW' });
+  const active = await manager.wait(grok.runId, 1);
+  assert.equal(active.status, 'running');
+  assert.equal(active.sessionId, done.sessionId);
+  assert.equal((await manager.get(deepseekFollow.runId)).status, 'running');
+  await manager.cancel(grok.runId);
+  assert.equal((await manager.get(deepseekFollow.runId)).status, 'running', 'Cancelling Grok must not affect DeepSeek');
+});
+
+test('an uncooperative Grok worker is drained before a cancelled task becomes terminal', async t => {
+  const f = await fixture(t);
+  const config = await loadConfig({ ...f.config.env, SEEKWING_GROK_COMMAND: process.execPath,
+    SEEKWING_GROK_ARGS: JSON.stringify([path.join(repo, 'test/fake-grok.mjs')]), SEEKWING_GROK_HOME: path.join(f.root, 'grok') });
+  config.cancelGraceMs = 40;
+  const manager = new TaskManager(config); await manager.init();
+  t.after(() => manager.shutdown());
+  const run = await manager.start({ backend: 'grok', workspace: f.workspace, instruction: 'HANG', permissionMode: 'read-only', timeoutSeconds: 30 });
+  assert.equal((await manager.wait(run.runId, 1)).status, 'running');
+  const stopped = await manager.cancel(run.runId);
+  assert.equal(stopped.status, 'cancelled');
+  assert.match(stopped.cleanupError, /Grok session close timed out/);
+  const follow = await manager.reply(run.runId, 'HELLO');
+  assert.equal((await manager.wait(follow.runId, 5)).status, 'completed');
+});
+
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'seekwing-storage-'));
   const workspace = path.join(root, 'workspace');

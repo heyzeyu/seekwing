@@ -4,9 +4,10 @@ import { readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { privateDir, type Config } from './config.js';
+import { privateDir, requireCommand, type Config } from './config.js';
 
 export async function installDesktop(config: Config) {
+  await requireCommand(config, 'deepseek');
   // Keep native entry files outside a versioned Codex cache that plugin upgrades can remove.
   const source = fileURLToPath(new URL('../desktop/', import.meta.url));
   const target = path.join(config.stateDir, 'desktop-plugin');

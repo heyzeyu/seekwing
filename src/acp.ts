@@ -1,39 +1,17 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { Readable, Writable } from 'node:stream';
-import { client, methods, ndJsonStream, PROTOCOL_VERSION, type ClientConnection, type InitializeResponse, type NewSessionResponse, type ResumeSessionResponse, type RequestPermissionRequest, type RequestPermissionResponse, type SessionNotification } from '@agentclientprotocol/sdk';
-import { privateDir, VERSION, type Config, type PermissionMode } from './config.js';
-import { bounded } from './worker.js';
+import type { InitializeResponse } from '@agentclientprotocol/sdk';
+import { privateDir, requireCommand, VERSION, type Config } from './config.js';
+import { AcpProcessWorker } from './acp-process.js';
 export { bounded } from './worker.js';
 
-export class AcpWorker {
-  private child?: ChildProcessWithoutNullStreams;
-  private connection?: ClientConnection;
-  private exited?: Promise<void>;
+/** DeepSeek-specific launch configuration; transport and draining are shared. */
+export class AcpWorker extends AcpProcessWorker {
+  protected readonly label = 'Harness';
   private patchFile?: string;
-  private stderrText = '';
-  private spawnError?: Error;
-  private stopped = false;
-  private stopping?: Promise<void>;
-  sessionId?: string;
-  agentInfo?: InitializeResponse;
-  cleanupWarning?: string;
-
-  constructor(
-    readonly config: Config,
-    readonly runId: string,
-    readonly workspace: string,
-    readonly permissionMode: PermissionMode,
-    readonly onUpdate: (notification: SessionNotification) => void,
-    readonly onPermission: (request: RequestPermissionRequest) => Promise<RequestPermissionResponse>,
-  ) {}
-
-  get stderr(): string { return this.config.redact(this.stderrText); }
-
-  async start(): Promise<InitializeResponse> {
-    if (this.stopped) throw new Error('Worker was cancelled before startup.');
+  protected async launch() {
+    await requireCommand(this.config, 'deepseek');
     const dir = path.join(this.config.stateDir, 'patches');
     await privateDir(dir);
     await privateDir(this.config.harnessHome);
@@ -53,100 +31,15 @@ export class AcpWorker {
       } },
       { id: 'approval', config: { policy: 'ask' } },
     ]), { mode: 0o600 });
-    if (this.stopped) throw new Error('Worker was cancelled before launch.');
-    const child = this.child = spawn(this.config.command, [...this.config.commandArgs, '--profile', 'acp', '--patch', this.patchFile], {
-      cwd: this.workspace,
-      env: { ...this.config.env, DSH_HOME: this.config.harnessHome, DSH_PERMISSION_MODE: this.permissionMode },
-      stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true,
-    });
-    this.exited = new Promise<void>((resolve) => {
-      child.once('error', (error) => { this.spawnError = error; resolve(); });
-      child.once('close', () => resolve());
-    });
-    child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (chunk: string) => { this.stderrText = (this.stderrText + chunk).slice(-16_000); });
-    // Stream failures are also observed through ACP; prevent a late EPIPE from escaping shutdown.
-    child.stdin.on('error', () => {});
-    this.connection = client({ name: 'seekwing' })
-      .onNotification(methods.client.session.update, ({ params }) => { this.onUpdate(params); })
-      .onRequest(methods.client.session.requestPermission, ({ params }) => this.onPermission(params))
-      .connect(ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout) as unknown as ReadableStream<Uint8Array>));
-    void this.connection.closed.catch(() => {});
-    this.agentInfo = await bounded(this.connection.agent.request(methods.agent.initialize, {
-      protocolVersion: PROTOCOL_VERSION,
-      clientInfo: { name: 'seekwing', version: VERSION },
-      clientCapabilities: {},
-    }), this.config.startupTimeoutMs, 'Harness ACP initialization timed out.');
-    if (this.spawnError) throw this.spawnError;
-    if (this.agentInfo.agentInfo?.name !== 'deepseek-harness-acp') throw new Error('The executable is not the official DeepSeek Harness ACP agent.');
-    if (this.agentInfo.protocolVersion !== PROTOCOL_VERSION) throw new Error(`Unsupported Harness ACP protocol ${this.agentInfo.protocolVersion}; SeekWing requires stable ACP ${PROTOCOL_VERSION}. Update compatible Harness/SeekWing versions before sending a task.`);
-    return this.agentInfo;
+    return { command: this.config.command,
+      args: [...this.config.commandArgs, '--profile', 'acp', '--patch', this.patchFile],
+      env: { ...this.config.env, DSH_HOME: this.config.harnessHome, DSH_PERMISSION_MODE: this.permissionMode } };
   }
-
-  async openSession(sessionId?: string): Promise<NewSessionResponse | ResumeSessionResponse> {
-    if (!this.connection || this.stopped) throw new Error('Harness worker is not available.');
-    const params = { cwd: this.workspace, mcpServers: [] };
-    if (sessionId) {
-      const result = await bounded(this.connection.agent.request<ResumeSessionResponse>(methods.agent.session.resume, { ...params, sessionId }), this.config.startupTimeoutMs, 'Harness session resume timed out.');
-      this.sessionId = sessionId;
-      return result;
-    }
-    const result = await bounded(this.connection.agent.request<NewSessionResponse>(methods.agent.session.new, params), this.config.startupTimeoutMs, 'Harness session creation timed out.');
-    this.sessionId = result.sessionId;
-    return result;
+  protected validateAgent(info: InitializeResponse): void {
+    if (info.agentInfo?.name !== 'deepseek-harness-acp') throw new Error('The executable is not the official DeepSeek Harness ACP agent.');
   }
-
-  async setOption(configId: string, value: string) {
-    return bounded(this.connection!.agent.request(methods.agent.session.setConfigOption, { sessionId: this.sessionId!, configId, value }), this.config.startupTimeoutMs, 'Harness model configuration timed out.');
-  }
-
-  prompt(text: string) {
-    if (!this.connection || !this.sessionId || this.stopped) throw new Error('Harness worker is not available.');
-    return this.connection.agent.request(methods.agent.session.prompt, { sessionId: this.sessionId, prompt: [{ type: 'text', text }] });
-  }
-
-  async cancel(): Promise<void> {
-    this.stopped = true;
-    if (this.sessionId && this.connection && !this.connection.signal.aborted) {
-      await bounded(this.connection.agent.notify(methods.agent.session.cancel, { sessionId: this.sessionId }), 1_000, 'ACP cancel notification timed out.').catch(() => {});
-    }
-  }
-
-  private kill(signal: NodeJS.Signals): void {
-    const child = this.child;
-    if (!child?.pid) return;
-    try {
-      if (process.platform === 'win32') child.kill(signal);
-      else process.kill(-child.pid, signal);
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
-  }
-
-  async stop(): Promise<void> {
-    return this.stopping ??= this.stopOnce();
-  }
-  private async stopOnce(): Promise<void> {
-    this.stopped = true;
-    try {
-      if (this.sessionId && this.connection && !this.connection.signal.aborted) {
-        await bounded(this.connection.agent.request(methods.agent.session.close, { sessionId: this.sessionId }), this.config.cancelGraceMs, 'Harness session close timed out.')
-          .catch((error) => { this.cleanupWarning = this.config.redact(String(error)); });
-      }
-    } finally {
-      try {
-        this.child?.stdin.end();
-        if (this.exited) {
-          try { await bounded(this.exited, this.config.cancelGraceMs, 'Harness exit timed out.'); }
-          catch {
-            this.kill('SIGTERM');
-            try { await bounded(this.exited, 1_000, 'Harness termination timed out.'); }
-            catch { this.kill('SIGKILL'); await bounded(this.exited, 2_000, 'Could not confirm Harness process exit.'); }
-          }
-        }
-      } finally {
-        this.connection?.close();
-        if (this.patchFile) await unlink(this.patchFile).catch(() => {});
-      }
-    }
+  protected async cleanup(): Promise<void> {
+    if (this.patchFile) await unlink(this.patchFile).catch(() => {});
   }
 }
 

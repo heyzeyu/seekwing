@@ -1,9 +1,10 @@
-import type { PermissionMode, SessionMode } from './config.js';
+import type { Backend, PermissionMode, SessionMode } from './config.js';
 
 export type TaskStatus = 'starting' | 'running' | 'needs_attention' | 'cancelling' | 'completed' | 'incomplete' | 'failed' | 'cancelled' | 'interrupted';
 export const terminal = (status: TaskStatus): boolean => ['completed', 'incomplete', 'failed', 'cancelled', 'interrupted'].includes(status);
 
 export interface TaskInput {
+  backend?: Backend;
   workspace: string;
   instruction: string;
   acceptance?: string;
@@ -23,6 +24,8 @@ export interface Permission {
 }
 
 export interface Task {
+  /** Absent in pre-0.3 records, which always belong to DeepSeek. */
+  backend?: Backend;
   schemaVersion: 1;
   runId: string;
   parentRunId?: string;

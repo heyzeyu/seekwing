@@ -96,7 +96,7 @@ export class Store {
         if (observed === undefined) continue;
         const old = JSON.parse(observed);
         if (!Number.isSafeInteger(old.ownerPid) || old.ownerPid <= 0) throw new Error('Invalid session lock owner. Inspect the lock before recovery.');
-        if (pidAlive(old.ownerPid)) throw new Error('This Harness session already has an active turn.');
+        if (pidAlive(old.ownerPid)) throw new Error('This native session already has an active turn.');
         // Serialize reclamation and re-read after admission. A stale snapshot must never unlink a fresh owner.
         const recoveryFile = file + '.recovery';
         const guard = await open(recoveryFile, 'wx', 0o600).catch((error) => {
@@ -112,7 +112,7 @@ export class Store {
           await unlink(recoveryFile);
         }
       }
-      throw new Error('Could not acquire the Harness session lock.');
+      throw new Error('Could not acquire the native session lock.');
     } finally { await unlink(temp).catch(() => {}); }
   }
   async writeControl(runId: string, control: unknown): Promise<void> {

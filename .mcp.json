@@ -27,7 +27,14 @@
         "no_proxy",
         "SEEKWING_SESSION_MODE",
         "SEEKWING_DESKTOP_ENDPOINT",
-        "SEEKWING_DESKTOP_HOME"
+        "SEEKWING_DESKTOP_HOME",
+        "SEEKWING_BACKEND",
+        "SEEKWING_GROK_COMMAND",
+        "SEEKWING_GROK_ARGS",
+        "SEEKWING_GROK_HOME",
+        "SEEKWING_GROK_MODEL",
+        "GROK_HOME",
+        "XAI_API_KEY"
       ]
     }
   }

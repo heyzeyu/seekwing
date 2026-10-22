@@ -2,13 +2,13 @@
 
 <img src="assets/seekwing-logo.png" width="128" alt="SeekWing: DeepSeek whale with a plugin badge">
 
-**DeepSeek subagents for Codex.** Delegate with MCP. Execute through ACP or visible Desktop sessions. Review with Codex.
+**DeepSeek and Grok subagents for Codex.** Delegate with MCP. Execute through ACP or visible Desktop sessions. Review with Codex.
 
 [简体中文](README.zh-CN.md) · [MIT](LICENSE)
 
-SeekWing lets Codex assign scoped work to DeepSeek Harness, wait for results, continue the same session with corrections, and independently check files and tests. **Seek** comes from DeepSeek; **Wing** is your coding wingman.
+SeekWing lets Codex assign scoped work to DeepSeek Harness or Grok, wait for results, continue the same session with corrections, and independently check files and tests. **Seek** comes from DeepSeek; **Wing** is your coding wingman.
 
-**v0.2.3 adds another review pass:** atomic cross-process controls, accurate concurrent idempotency records, escaped-credential redaction and bounded history reads. [Review record](docs/review-v023.zh-CN.md) · [Previous overall review](docs/final-review.zh-CN.md) · [Source comparison](docs/reference-review.zh-CN.md).
+**v0.3.0 adds the Grok adapter:** one MCP toolset with `backend: deepseek | grok`, shared durable tasks and independent runtime configuration. Existing DeepSeek defaults and history stay compatible. [Implementation and real test evidence](docs/grok-adapter.zh-CN.md).
 
 Visible Desktop sessions were introduced in v0.2.0 alongside background ACP. Real generation, same-session follow-up and file edits have been verified on macOS with Harness Desktop **0.2.1-rc.2**, Node **24.12.0** and DeepSeek Flash / High. Windows and other Harness versions remain untested.
 
@@ -17,7 +17,9 @@ flowchart LR
     C[Codex: assign and review] <-->|MCP stdio| S[SeekWing]
     S <-->|Official ACP stdio| H[DeepSeek Harness worker]
     S <-->|Authenticated loopback bridge| D[Harness Desktop companion]
-    H --> W[Local workspace and persisted session]
+    S <-->|Official ACP stdio| G[Grok worker]
+    G --> W[Local workspace and persisted session]
+    H --> W
     D --> W
 ```
 
@@ -25,7 +27,7 @@ The plugin packages an MCP server and a review skill. Background turns use an is
 
 ## Install in Codex
 
-Requirements: Node.js **22+**, a current Codex build with plugin support, the [official DeepSeek Harness CLI](https://github.com/deepseek-ai/deepseek-harness), and credentials for your chosen Harness provider.
+Requirements: Node.js **22+**, a current Codex build with plugin support, the official CLI and login for your selected backend: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) or [Grok Build](https://github.com/xai-org/grok-build). Installing both is optional.
 
 ```sh
 codex plugin marketplace add heyzeyu/seekwing
@@ -54,7 +56,23 @@ Otherwise it finds `dsh` on `PATH`. Set `SEEKWING_DSH_COMMAND` to an absolute ex
 
 `doctor` verifies the configured mode's handshake without calling a model. It does not validate credentials or prove generation works. For an end-to-end check, delegate a small read-only task and wait for its result. Desktop diagnostics report the MCP `version` and running `companionVersion` separately, with an upgrade/restart warning when they differ.
 
-## Enable Desktop mode
+## Use Grok
+
+Install the official CLI and run `grok login`, then:
+
+```sh
+node ./dist/seekwing.mjs doctor --backend grok
+```
+
+Select `"backend": "grok"` in `start_task`, `inspect_models` and `doctor`, or ask Codex to delegate to Grok through SeekWing. Set `SEEKWING_BACKEND=grok` to change the default for new tasks. Model values must come from the same backend's catalog, for example the tested `grok-4.7-build-fast`; DeepSeek's opaque provider/model values are not Grok model IDs.
+
+Grok runs as an owned `grok agent --no-leader stdio` process using native login and history in `~/.grok`. After completion, run `grok --resume <sessionId>` in the task workspace to continue it manually. Do not operate the same session simultaneously from the TUI and SeekWing. This adapter does not attach to a running TUI or support Grok `desktop` mode. A DeepSeek Desktop default does not affect Grok tasks.
+
+Replies retain backend, workspace, model, permissions and session mode across MCP restarts and default changes. Records from older versions without a backend remain DeepSeek records; no history is migrated or replayed.
+
+On macOS/Linux, Grok uses its native `read-only` or `workspace` sandbox (the latter maps to SeekWing `workspace-write`). Before prompting, SeekWing verifies the native session's sandbox, workspace and ID. Mismatches fail closed. Yolo/auto, automatic Bash approval and the CLI auto-updater are disabled for the owned process. Grok's profiles allow writes to runtime data and temporary directories; workspace mode additionally permits the assigned workspace. Reads can reach outside the workspace. Child networking is unrestricted on macOS; Linux read-only mode restricts it. Windows is not supported by the Grok adapter.
+
+## Enable DeepSeek Desktop mode
 
 From this repository or the installed SeekWing plugin directory:
 
@@ -108,6 +126,7 @@ Example `start_task` arguments:
 
 ```json
 {
+  "backend": "deepseek",
   "workspace": "/absolute/path/to/project",
   "instruction": "Fix the addition bug in sum.mjs. Change only that file.",
   "acceptance": "The existing node --test sum.test.mjs passes; tests remain unchanged.",
@@ -126,9 +145,9 @@ A confirmed `end_turn` response stays `completed` if a user cancel races with co
 
 ## Permissions and data
 
-Background mode sets `DSH_PERMISSION_MODE` and a final native configuration overlay. Desktop mode sets native session-level sandbox and approval events. `read-only` and `workspace-write` are actual native sandbox modes, not just prompt instructions. It does not expose `danger-full-access`. Read-only tasks cannot be escalated through SeekWing. Background workspace-write permission requests are forwarded to Codex; Desktop approvals stay in Harness; `allow_once` requires human authorization for that specific escalation. Normal permission to edit a project does not grant access outside its sandbox.
+DeepSeek background mode sets `DSH_PERMISSION_MODE` and a final native configuration overlay. Desktop mode sets native session-level sandbox and approval events. `read-only` and `workspace-write` are actual native sandbox modes, not just prompt instructions. It does not expose `danger-full-access`. Read-only tasks cannot be escalated through SeekWing. Background workspace-write permission requests are forwarded to Codex; Desktop approvals stay in Harness; `allow_once` requires human authorization for that specific operation. Normal permission to edit a project does not grant access outside its sandbox.
 
-Instructions are not a per-file enforcement mechanism. Use a separate checkout/worktree when isolation is needed. `SEEKWING_ALLOWED_ROOTS` checks the selected workspace, including its real path; it is not an additional read-access sandbox. Trust the configured Harness executable, home and plugins.
+Instructions are not a per-file enforcement mechanism. Use a separate checkout/worktree when isolation is needed. `SEEKWING_ALLOWED_ROOTS` checks the selected workspace, including its real path; it is not an additional read-access sandbox. Trust the configured native executable, home and plugins.
 
 Default private state locations:
 
@@ -156,6 +175,12 @@ History listing reads at most eight records concurrently and retains only the re
 
 | Variable | Default / purpose |
 | --- | --- |
+| `SEEKWING_BACKEND` | `deepseek` (default) or `grok`; overridable per new task. |
+| `SEEKWING_GROK_COMMAND` | Absolute CLI path; prefers `~/.grok/bin/grok`, then `PATH`. |
+| `SEEKWING_GROK_ARGS` | Trusted launcher prefix arguments as a JSON array, default `[]`. |
+| `SEEKWING_GROK_HOME` | `GROK_HOME` or `~/.grok`; uses native login and history. |
+| `SEEKWING_GROK_MODEL` | Optional default model; otherwise Grok's native selection. Independent of DeepSeek routing. |
+| `XAI_API_KEY` | Optional; used only if Grok advertises API-key auth, otherwise native cached login. |
 | `SEEKWING_DSH_COMMAND` | Absolute official CLI; macOS Desktop first, then `PATH`. |
 | `SEEKWING_DSH_ARGS` | JSON array of trusted launcher prefix arguments, default `[]`. Task text goes over ACP, never through shell interpolation. |
 | `SEEKWING_STATE_DIR` | Platform state directory above. |
@@ -183,12 +208,15 @@ npm test
 npm pack --dry-run
 ```
 
-48 deterministic tests use an independent ACP wire fixture and native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation and permission rejection, deadlines, output caps, redaction, workspace-root validation and crash recovery. This release adds partial and failed control writes, idempotency contention, escaped credentials, nested native JSON and bounded history reads. No provider credentials are needed.
+63 deterministic tests use independent DeepSeek/Grok ACP wire fixtures and a native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation and permission rejection, deadlines, output caps, redaction, workspace-root validation and crash recovery. Grok coverage includes noninteractive auth, exact model selection, backend isolation, legacy history, refusing prompts under an unexpected sandbox, and cross-process cancellation. No provider credentials are needed.
 
-The opt-in smoke test **calls DeepSeek and consumes normal provider usage**. It edits only its generated scratch workspace and independently reruns the example test:
+The opt-in smoke test **calls DeepSeek or Grok and consumes normal provider usage**. It edits only its generated scratch workspace and independently reruns the example test:
 
 ```sh
 SEEKWING_NATIVE_TEST_ROOT=/absolute/path/to/scratch node test/native-smoke.mjs
+
+# Grok: generation, restart/resume, file edit, read-only denial and cancellation
+SEEKWING_NATIVE_TEST_ROOT=/absolute/path/to/scratch node test/native-grok-smoke.mjs
 
 # With the companion installed and Harness running:
 SEEKWING_SESSION_MODE=desktop SEEKWING_NATIVE_TEST_ROOT=/absolute/path/to/scratch node test/native-smoke.mjs
@@ -199,7 +227,9 @@ The committed `dist/seekwing.mjs`, `desktop/index.mjs` and `dist/THIRD_PARTY_NOT
 ## References and license
 
 - [Official Harness ACP](https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/acp/acp)
+- [Official Grok ACP documentation](https://docs.x.ai/build/cli/headless-scripting)
+- [Official Grok source](https://github.com/xai-org/grok-build)
 - [Agent Client Protocol](https://agentclientprotocol.com/)
 - [OpenAI plugin packaging](https://developers.openai.com/plugins/build/plugins)
 
-Independent project, not affiliated with DeepSeek AI or OpenAI. Source: [MIT](LICENSE). Bundled dependencies: [third-party notices](dist/THIRD_PARTY_NOTICES.txt).
+Independent project, not affiliated with DeepSeek AI, xAI or OpenAI. Source: [MIT](LICENSE). Bundled dependencies: [third-party notices](dist/THIRD_PARTY_NOTICES.txt).

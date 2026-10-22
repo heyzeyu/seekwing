@@ -2,13 +2,13 @@
 
 <img src="assets/seekwing-logo.png" width="128" alt="SeekWing：DeepSeek 蓝鲸与插件拼图徽标">
 
-**让 DeepSeek 成为 Codex 的子代理。Codex 派任务，DeepSeek 执行，Codex 复核。**
+**让 DeepSeek 和 Grok 成为 Codex 的子代理。Codex 派任务并复核，原生代理执行。**
 
 [English](README.md) · [MIT](LICENSE)
 
 Seek 来自 DeepSeek，Wing 代表搭档和僚机。插件采用 **MCP 服务 + 委派复核 Skill**，支持独立后台 ACP 和 Harness 桌面会话两种执行方式。终端命令用于启动 MCP、安装桌面伴随插件和诊断连接。
 
-**v0.2.3 再次复查**：修复跨进程控制文件的写入窗口、并发幂等请求的多余失败记录、JSON 转义凭据脱敏，以及历史读取资源无上限的问题。[本次复查记录](docs/review-v023.zh-CN.md) · [前版整体复查](docs/final-review.zh-CN.md) · [开源对照](docs/reference-review.zh-CN.md)。
+**v0.3.0 新增 Grok 适配器**：同一组 MCP 工具支持 `backend: deepseek | grok`，共享任务、续聊、取消和权限处理；旧 DeepSeek 历史与默认行为保持兼容。[Grok 实测与实现说明](docs/grok-adapter.zh-CN.md)。
 
 v0.2.0 引入的桌面模式可在已运行的 Harness Host 中执行任务，并在工作区列表显示会话；独立后台 ACP 模式继续保留。macOS、Harness Desktop **0.2.1-rc.2**、Node **24.12.0** 上已验证真实生成、同会话续聊和编辑文件。Windows 和其他 Harness 版本尚未实测。
 
@@ -17,7 +17,9 @@ flowchart LR
     C[Codex 派发与复核] <-->|MCP stdio| S[SeekWing]
     S <-->|官方 ACP stdio| H[DeepSeek Harness 工作进程]
     S <-->|本机认证桥接| D[Harness Desktop 内部伴随插件]
-    H --> W[本地工作区与持久会话]
+    S <-->|官方 ACP stdio| G[Grok 工作进程]
+    G --> W[本地工作区与持久会话]
+    H --> W
     D --> W
 ```
 
@@ -25,7 +27,7 @@ flowchart LR
 
 ## 安装
 
-需要 Node.js **22+**、支持插件的新版 Codex、[官方 Harness CLI](https://github.com/deepseek-ai/deepseek-harness)，以及所选模型供应商的凭据。
+需要 Node.js **22+**、支持插件的新版 Codex，以及所选后端的官方 CLI 和登录态。DeepSeek 使用 [Harness](https://github.com/deepseek-ai/deepseek-harness)，Grok 使用 [Grok Build](https://github.com/xai-org/grok-build)；不需要同时安装两者。
 
 ```sh
 codex plugin marketplace add heyzeyu/seekwing
@@ -54,7 +56,23 @@ macOS 优先使用真正的 Desktop 内置 CLI，避免误用同名的 SSH 脚�
 
 `doctor` 验证所选模式的握手，不代表密钥有效或模型生成成功。完整检查需要派发一个小任务并等待真实结果。桌面诊断分别报告 MCP 的 `version` 和运行中伴随插件的 `companionVersion`；版本不一致时提示更新和重启。
 
-## 启用桌面会话
+## 使用 Grok
+
+先安装官方 Grok CLI 并完成 `grok login`，再执行：
+
+```sh
+node ./dist/seekwing.mjs doctor --backend grok
+```
+
+对 Codex 说“用 SeekWing 让 Grok 修这个问题，你审核并跑测试”，或给 `start_task`、`inspect_models`、`doctor` 设置 `"backend": "grok"`。模型必须取自同后端的 `inspect_models`；例如本机实测的 `grok-4.7-build-fast`，不要传 DeepSeek 的供应商/模型组合值。`SEEKWING_BACKEND=grok` 可改变新任务默认后端。
+
+Grok 使用独立的 `grok agent --no-leader stdio` 进程，复用原生登录和 `~/.grok` 历史。完成后可在对应目录执行 `grok --resume <sessionId>` 继续原会话。不要同时从 TUI 和 SeekWing 操作同一个会话；目前不连接正在打开的 TUI，也不提供 Grok 的 `desktop` 模式。DeepSeek 的全局桌面偏好不会影响 Grok。
+
+`reply_task` 保留后端、模式、工作区、模型和权限，即使新 MCP 的默认配置已经改变。旧版本未记录后端的任务仍按 DeepSeek 处理，不会迁移或重放。
+
+Grok 在 macOS/Linux 使用原生 `read-only` / `workspace` 沙箱；SeekWing 的 `workspace-write` 对应后者。发送任务前读取该会话元数据，核对实际沙箱、工作区和会话 ID；不匹配则停止。显式关闭 yolo/auto 和自动更新，不启用一律批准。原生只读沙箱仍允许写入 Grok 运行数据和临时目录；workspace 沙箱额外允许写入指定工作区。两者可读取工作区以外的文件；macOS 不限制子进程网络，Linux 只读模式限制子进程网络。不要将“只读”理解为不能产生任何系统状态变化。Windows 暂不支持 Grok 适配器。
+
+## 启用 DeepSeek 桌面会话
 
 在安装后的 SeekWing 插件目录或本仓库目录运行：
 
@@ -108,6 +126,7 @@ Skill 会明确工作区、允许范围和验收标准。分析默认只读；�
 
 ```json
 {
+  "backend": "deepseek",
   "workspace": "/absolute/path/to/project",
   "instruction": "修复 sum.mjs 的加法错误，只修改这个文件。",
   "acceptance": "现有 node --test sum.test.mjs 通过，测试文件不变。",
@@ -122,13 +141,13 @@ Skill 会明确工作区、允许范围和验收标准。分析默认只读；�
 
 用户取消刚好遇到原生已完成响应时，保留真实的 `completed/end_turn`，并记录取消请求；超过任务截止时间仍标记失败。
 
-`completed` 表示原生 Harness 轮次结束且 SeekWing 已完成清理；桌面会话仍保留，**仍需 Codex 核对验收标准**。输出上限停止标为 `incomplete`，模型或连接错误标为 `failed`。已完成的一轮也可能有失败的工具调用，需要复核。服务中断后不会自动重放指令，应先检查是否已经修改了文件。
+`completed` 表示原生代理轮次结束且 SeekWing 已完成清理；桌面会话仍保留，**仍需 Codex 核对验收标准**。输出上限停止标为 `incomplete`，模型或连接错误标为 `failed`。已完成的一轮也可能有失败的工具调用，需要复核。服务中断后不会自动重放指令，应先检查是否已经修改了文件。
 
 ## 权限与数据
 
-后台模式设置 `DSH_PERMISSION_MODE` 和最后一层原生配置；桌面模式使用会话级原生 sandbox/approval 事件。两种模式使用真正的 `read-only` / `workspace-write` 沙箱，不暴露 `danger-full-access`。只读任务不能通过 SeekWing 提权。后台写入任务的原生权限请求会转交 Codex，桌面请求保留在 Harness UI；只有用户授权了该次越界操作时，才能选择 `allow_once`。普通项目编辑授权不包含沙箱外权限。
+DeepSeek 后台模式设置 `DSH_PERMISSION_MODE` 和最后一层原生配置；桌面模式使用会话级原生 sandbox/approval 事件。两种模式使用真正的 `read-only` / `workspace-write` 沙箱，不暴露 `danger-full-access`。只读任务不能通过 SeekWing 提权。后台写入任务的原生权限请求会转交 Codex，桌面请求保留在 Harness UI；只有该具体操作已有用户授权时，才能选择 `allow_once`。普通项目编辑授权不包含沙箱外权限。
 
-任务文本不是逐文件强制白名单。需要隔离其他修改时，使用独立 checkout/worktree。`SEEKWING_ALLOWED_ROOTS` 检查提交时选择的工作区和真实路径，不是额外的读取权限沙箱。配置的 Harness 程序、Home 和插件应当可信。
+任务文本不是逐文件强制白名单。需要隔离其他修改时，使用独立 checkout/worktree。`SEEKWING_ALLOWED_ROOTS` 检查提交时选择的工作区和真实路径，不是额外的读取权限沙箱。配置的原生程序、Home 和插件应当可信。
 
 跨 MCP 进程的取消和权限选择通过完整文件原子发布；未写完的消息不会被任务所有者读取，写入失败时不会投递半条消息。并发重试仍复用原 `idempotencyKey`；竞争失败或结果不确定时不会生成替代任务记录，也不会自动重发原指令。
 
@@ -154,6 +173,12 @@ Skill 会明确工作区、允许范围和验收标准。分析默认只读；�
 
 | 环境变量 | 默认值 / 含义 |
 | --- | --- |
+| `SEEKWING_BACKEND` | 默认 `deepseek`，可设为 `grok`；单次任务可覆盖。 |
+| `SEEKWING_GROK_COMMAND` | Grok 可执行文件绝对路径；优先 `~/.grok/bin/grok`，再查 `PATH`。 |
+| `SEEKWING_GROK_ARGS` | 可信启动前缀参数 JSON 数组，默认 `[]`。 |
+| `SEEKWING_GROK_HOME` | 原生 Grok Home：`GROK_HOME` 或 `~/.grok`；复用原生登录与历史。 |
+| `SEEKWING_GROK_MODEL` | 可选默认模型；未设定时使用 Grok 原生选择，与 DeepSeek 路由无关。 |
+| `XAI_API_KEY` | 可选；仅在 Grok 宣告支持该认证方式时使用，否则使用原生缓存登录。 |
 | `SEEKWING_DSH_COMMAND` | 官方 CLI 绝对路径；macOS 优先内置 CLI，再查 `PATH`。 |
 | `SEEKWING_DSH_ARGS` | 可信启动参数前缀的 JSON 数组，默认 `[]`；任务通过 ACP 传输，不拼接 shell 命令。 |
 | `SEEKWING_STATE_DIR` | 上述平台状态目录。 |
@@ -181,12 +206,15 @@ npm test
 npm pack --dry-run
 ```
 
-48 项确定性测试使用 ACP 模拟器和桌面 Host 适配器，覆盖双模式完成、桌面认证/会话隔离/取消/拒绝回退，以及生命周期、续聊、幂等、权限、会话锁、跨进程取消与权限拒绝、截止时间、输出截断、脱敏、工作区边界和崩溃恢复。本版新增控制文件半写入及失败、并发幂等竞争、转义凭据、嵌套工具 JSON 和有界历史读取的回归，不需要模型密钥。
+63 项确定性测试使用独立的 DeepSeek/Grok ACP 模拟器和桌面 Host 适配器，覆盖双模式完成、桌面认证/会话隔离/取消/拒绝回退，以及生命周期、续聊、幂等、权限、会话锁、跨进程取消与权限拒绝、截止时间、输出截断、脱敏、工作区边界和崩溃恢复。Grok 回归额外覆盖非交互认证、精确模型选择、后端隔离、旧历史兼容、沙箱不匹配时拒绝发送任务和跨进程取消，不需要模型密钥。
 
-可选实测**会调用真实 DeepSeek，消耗供应商额度**，只修改自动生成的临时工作区，并独立重跑示例测试：
+可选实测**会调用真实 DeepSeek 或 Grok，消耗对应额度**，只修改自动生成的临时工作区，并独立重跑示例测试：
 
 ```sh
 SEEKWING_NATIVE_TEST_ROOT=/absolute/path/to/scratch node test/native-smoke.mjs
+
+# Grok：真实生成、重启后续聊、改文件、只读拒绝与取消
+SEEKWING_NATIVE_TEST_ROOT=/absolute/path/to/scratch node test/native-grok-smoke.mjs
 
 # 已安装桌面伴随插件且 Harness 正在运行：
 SEEKWING_SESSION_MODE=desktop SEEKWING_NATIVE_TEST_ROOT=/absolute/path/to/scratch node test/native-smoke.mjs
@@ -197,7 +225,9 @@ SEEKWING_SESSION_MODE=desktop SEEKWING_NATIVE_TEST_ROOT=/absolute/path/to/scratc
 ## 参考与许可证
 
 - [官方 Harness ACP](https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/acp/acp)
+- [官方 Grok ACP 文档](https://docs.x.ai/build/cli/headless-scripting)
+- [官方 Grok 源码](https://github.com/xai-org/grok-build)
 - [ACP 协议](https://agentclientprotocol.com/)
 - [OpenAI 插件打包](https://developers.openai.com/plugins/build/plugins)
 
-本项目独立维护，与 DeepSeek AI、OpenAI 无隶属关系。源码采用 [MIT](LICENSE)，依赖见[第三方许可证](dist/THIRD_PARTY_NOTICES.txt)。
+本项目独立维护，与 DeepSeek AI、xAI、OpenAI 无隶属关系。源码采用 [MIT](LICENSE)，依赖见[第三方许可证](dist/THIRD_PARTY_NOTICES.txt)。

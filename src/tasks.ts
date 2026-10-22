@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { RequestPermissionRequest, RequestPermissionResponse, SessionNotification } from '@agentclientprotocol/sdk';
-import { AcpWorker } from './acp.js';
-import { DesktopWorker } from './desktop-client.js';
+import { createWorker, sessionLockKey } from './backends.js';
 import type { Worker } from './worker.js';
-import { workspacePath, type Config } from './config.js';
+import { sessionModeFor, workspacePath, type Config } from './config.js';
 import { Store } from './store.js';
 import { terminal, type Task, type TaskInput } from './types.js';
 
@@ -59,19 +58,24 @@ export class TaskManager {
     if (this.closed) throw new Error('SeekWing is shutting down.');
     const workspace = await workspacePath(this.config, input.workspace);
     if (!input.instruction.trim()) throw new Error('instruction must not be empty.');
+    const backend = input.backend ?? this.config.backend;
+    const sessionMode = sessionModeFor(this.config, backend, input.sessionMode);
     const runId = 'sw-' + randomUUID();
     const now = new Date().toISOString();
     const task: Task = {
       schemaVersion: 1, runId, parentRunId: parent?.runId, ownerPid: process.pid, sessionId: parent?.sessionId,
-      sessionMode: input.sessionMode ?? this.config.sessionMode,
-      workspace, permissionMode: input.permissionMode, configuredDefaultRoute: { provider: this.config.provider, model: this.config.model },
-      modelValue: input.modelValue, reasoningEffort: input.reasoningEffort,
+      backend, sessionMode,
+      workspace, permissionMode: input.permissionMode, configuredDefaultRoute: backend === 'grok'
+        ? { provider: 'grok-cli', model: this.config.grokModel ?? 'native-default' }
+        : { provider: this.config.provider, model: this.config.model },
+      modelValue: input.modelValue ?? (backend === 'grok' ? this.config.grokModel : undefined), reasoningEffort: input.reasoningEffort,
       status: 'starting', createdAt: now, updatedAt: now, instruction: input.instruction, acceptance: input.acceptance,
       timeoutSeconds: input.timeoutSeconds, output: '', outputTruncated: false, toolCalls: {},
       pendingPermissions: [], permissionDecisions: [], reviewRequired: true,
     };
-    const { idempotencyKey: _, ...identity } = input;
-    const submission = { ...identity, sessionMode: task.sessionMode, workspace, parentRunId: parent?.runId };
+    const { idempotencyKey: _, backend: __, ...identity } = input;
+    // Keep the legacy DeepSeek fingerprint byte-for-byte; Grok always adds its discriminator.
+    const submission = { ...identity, sessionMode: task.sessionMode, workspace, parentRunId: parent?.runId, ...(backend === 'grok' ? { backend } : {}) };
     if (input.idempotencyKey) {
       const existing = await this.store.findKey(input.idempotencyKey, submission);
       if (existing) return this.get(existing).catch(() => { throw new Error(`Idempotent task ${existing} has uncertain admission. Inspect state; do not automatically resubmit.`); });
@@ -93,7 +97,7 @@ export class TaskManager {
         }
         job.admitted = true;
       }
-      if (parent?.sessionId) release = await this.store.lockSession(parent.sessionId, runId);
+      if (parent?.sessionId) release = await this.store.lockSession(sessionLockKey(backend, parent.sessionId), runId);
       await this.save(job);
       job.done = this.execute(job, release).catch((error) => {
         // Only disk/cleanup failures should reach here; keep stdout protocol-clean.
@@ -115,8 +119,8 @@ export class TaskManager {
   async reply(runId: string, instruction: string, acceptance?: string, idempotencyKey?: string, timeoutSeconds?: number): Promise<Task> {
     const parent = await this.get(runId);
     if (!terminal(parent.status)) throw new Error('Wait for the current turn to finish before replying.');
-    if (!parent.sessionId) throw new Error('This task has no resumable Harness session.');
-    return this.start({ workspace: parent.workspace, permissionMode: parent.permissionMode,
+    if (!parent.sessionId) throw new Error('This task has no resumable native session.');
+    return this.start({ backend: parent.backend ?? 'deepseek', workspace: parent.workspace, permissionMode: parent.permissionMode,
       sessionMode: parent.sessionMode ?? 'background',
       modelValue: parent.modelValue, reasoningEffort: parent.reasoningEffort,
       instruction, acceptance, idempotencyKey, timeoutSeconds: timeoutSeconds ?? parent.timeoutSeconds }, parent);
@@ -246,15 +250,13 @@ export class TaskManager {
 
   private async execute(job: Job, release?: () => Promise<void>): Promise<void> {
     const task = job.task;
-    const worker = job.worker = task.sessionMode === 'desktop'
-      ? new DesktopWorker(this.config, task.runId, task.workspace, task.permissionMode, (update) => this.update(job, update), (message) => {
+    const worker = job.worker = createWorker(this.config, task.backend ?? 'deepseek', task.sessionMode ?? 'background',
+      task.runId, task.workspace, task.permissionMode, (update) => this.update(job, update), (request) => this.permission(job, request), (message) => {
         if (task.desktopAttention === message) return;
         task.desktopAttention = message;
         if (!task.cancellation) task.status = message ? 'needs_attention' : 'running';
         void this.save(job).catch(() => {});
-      })
-      : new AcpWorker(this.config, task.runId, task.workspace, task.permissionMode,
-        (update) => this.update(job, update), (request) => this.permission(job, request));
+      });
     const timeout = setTimeout(() => { void this.cancelJob(job, 'timeout').catch(() => {}); }, task.timeoutSeconds * 1_000);
     let readingControls = false;
     const controls = setInterval(() => {
@@ -275,7 +277,7 @@ export class TaskManager {
       const session = await worker.openSession(task.sessionId);
       task.sessionId = worker.sessionId;
       task.configOptions = session.configOptions;
-      if (!release) release = await this.store.lockSession(task.sessionId!, task.runId);
+      if (!release) release = await this.store.lockSession(sessionLockKey(task.backend ?? 'deepseek', task.sessionId!), task.runId);
       await this.save(job);
       if (task.modelValue !== undefined) task.configOptions = (await worker.setOption('model', task.modelValue)).configOptions;
       if (task.reasoningEffort !== undefined) task.configOptions = (await worker.setOption('reasoning_effort', task.reasoningEffort)).configOptions;
@@ -304,7 +306,7 @@ export class TaskManager {
         await worker.stop();
         if (task.cancellation && (task.cancellation === 'timeout' || outcome !== 'completed')) {
           outcome = task.cancellation === 'timeout' ? 'failed' : 'cancelled';
-          if (task.cancellation === 'timeout') task.error = 'Task deadline exceeded; the owned Harness turn has stopped.';
+          if (task.cancellation === 'timeout') task.error = 'Task deadline exceeded; the owned native turn has stopped.';
         }
         if (worker.cleanupWarning) {
           task.cleanupError = worker.cleanupWarning;
