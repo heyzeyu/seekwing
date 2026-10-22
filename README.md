@@ -173,7 +173,7 @@ The background Harness home is `<state>/harness`, separate from Desktop. Desktop
 
 Cross-process cancellation and permission controls are published as complete files; owners cannot consume a partially written message. Failed writes deliver no command. Concurrent retries keep the original `idempotencyKey`; losing or uncertain requests create no replacement task record and never automatically replay an instruction.
 
-Desktop HTTP bodies are capped at 512 KiB and decoded after byte assembly, preserving split UTF-8 and supported long prompts. Both backends reject incompatible protocol versions before sending instructions. Upgrade the companion with `desktop-install` and restart Harness for this release.
+Desktop HTTP bodies are capped at 512 KiB and decoded after byte assembly, preserving split UTF-8 and supported long prompts. Both backends reject incompatible protocol versions before sending instructions. Upgrade an incompatible companion with `desktop-install`, then restart Harness. The v0.4.0 attribution and task-card changes need a fresh Codex chat, not a native runtime restart; an already compatible companion still works.
 
 Task deadlines range from 10 to 3600 seconds. Background cancellation uses ACP and then its owned process group if needed. Desktop uses native session cancellation and never kills the Host; uncertain cleanup is reported. Terminal status follows cleanup. Concurrency is limited per MCP server, with an additional eight-run limit in the Desktop Host; session locks are shared by servers using the same state directory. History has no automatic expiry; stop related tasks before removing state.
 
