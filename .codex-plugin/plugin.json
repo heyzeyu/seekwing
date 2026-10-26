@@ -1,6 +1,6 @@
 {
   "name": "seekwing",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "DeepSeek and Grok subagents for Codex, with persistent ACP tasks and independent review.",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",

@@ -235,9 +235,17 @@ export class TaskManager {
       case 'tool_call':
       case 'tool_call_update': {
         const id = update.toolCallId;
+        // Keep following new calls in long sessions instead of freezing the log
+        // forever after its first 100 calls. Prefer evicting finished calls.
+        if (!Object.hasOwn(job.task.toolCalls, id) && Object.keys(job.task.toolCalls).length >= 100) {
+          const oldest = Object.keys(job.task.toolCalls).find(key => !['pending', 'in_progress'].includes(String(job.task.toolCalls[key].status)))
+            ?? Object.keys(job.task.toolCalls)[0];
+          delete job.task.toolCalls[oldest];
+          job.task.toolCallsTruncated = true;
+        }
         if (Object.hasOwn(job.task.toolCalls, id) || Object.keys(job.task.toolCalls).length < 100) {
           const bounded = JSON.parse(this.config.redact(JSON.stringify(update)), (_key, value) => typeof value === 'string' && value.length > 8_000 ? value.slice(0, 8_000) + '\n[TRUNCATED]' : value);
-          Object.defineProperty(job.task.toolCalls, id, { value: { ...(Object.hasOwn(job.task.toolCalls, id) ? job.task.toolCalls[id] : {}), ...bounded }, enumerable: true, configurable: true, writable: true });
+          Object.defineProperty(job.task.toolCalls, id, { value: { status: 'pending', ...(Object.hasOwn(job.task.toolCalls, id) ? job.task.toolCalls[id] : {}), ...bounded }, enumerable: true, configurable: true, writable: true });
         } else job.task.toolCallsTruncated = true;
         break;
       }

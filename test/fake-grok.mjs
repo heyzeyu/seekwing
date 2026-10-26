@@ -68,6 +68,9 @@ createInterface({ input: process.stdin }).on('line', async line => {
           ] } }); break;
         }
         update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `GROK_TURN_${state.turns} ${state.model} ${state.effort}` } });
+        if(text.includes('MANY_TOOLS'))for(let i=0;i<125;i++){
+          update({sessionUpdate:'tool_call',toolCallId:'call-'+i,title:'call '+i,status:'completed',rawInput:{command:'echo '+i},content:[{type:'content',content:{type:'text',text:'result '+i}}]});
+        }
         if (text.includes('SLOW') || hanging) break;
         finish(text.includes('MAX_TOKENS') ? 'max_tokens' : 'end_turn'); break;
       }

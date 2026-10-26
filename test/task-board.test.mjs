@@ -13,12 +13,12 @@ const flush=async()=>{for(let i=0;i<4;i++)await new Promise(resolve=>setImmediat
 // Exercise the shipped browser script's lifecycle without a browser dependency.
 // The small DOM implements only the operations used by this card.
 class Element {
-  constructor(tag='div'){this.tag=tag;this.children=[];this.attrs={};this.dataset={};this.textContent='';this.scrollTop=0;this.scrollHeight=1000;this.value='';}
+  constructor(tag='div'){this.tag=tag;this.children=[];this.attrs={};this.dataset={};this.style={};this.textContent='';this.scrollTop=0;this.scrollHeight=1000;this.value='';}
   append(...nodes){this.children.push(...nodes);}
   replaceChildren(...nodes){this.children=nodes;}
   get firstElementChild(){return this.children[0];}
   setAttribute(k,v){this.attrs[k]=v;}
-  querySelector(selector){for(const child of this.children){if(selector==='details'?child.tag==='details':child.attrs['aria-label']==='代理输出（未经独立核验）')return child;const nested=child.querySelector(selector);if(nested)return nested;}return null;}
+  querySelector(selector){for(const child of this.children){if(selector==='details'?child.tag==='details':selector==='[aria-label="执行日志"]'?child.attrs['aria-label']==='执行日志':child.attrs['aria-label']==='代理输出（未经独立核验）')return child;const nested=child.querySelector(selector);if(nested)return nested;}return null;}
   getBoundingClientRect(){return{height:700};}
 }
 function harness({globals}={}){
@@ -100,4 +100,24 @@ test('a completed host result with more pages fetches its tail once without acti
   assert.equal(h.calls().length,1);assert.equal(h.calls()[0].params.arguments.outputTail,true);
   h.reply(h.calls()[0],{structuredContent:task({status:'completed',output:'final output',outputOffset:18000,outputLength:30000,outputTail:true})});await flush();
   assert.equal(h.elements.tasks.querySelector('pre').textContent,'final output');assert.ok(![...h.timers.values()].some(t=>t.ms===1000));
+});
+
+function domText(element){return[element.textContent,...element.children.map(domText)].join('\n');}
+test('live tool commands and streamed results are visible without expanding raw evidence',async()=>{
+  const h=harness();await h.init();
+  const call={toolCallId:'shell-1',title:'python output',status:'in_progress',rawInput:{command:'python3 -u demo.py'},content:[{type:'content',content:{type:'text',text:'line one'}}]};
+  h.send('ui/notifications/tool-result',{structuredContent:task({toolCalls:[call]})});
+  const log=h.elements.tasks.querySelector('[aria-label="执行日志"]');
+  assert.match(domText(log),/python3 -u demo.py/);assert.match(domText(log),/line one/);
+  await h.poll();h.reply(h.calls()[0],{structuredContent:task({toolCalls:[{...call,content:[{type:'content',content:{type:'text',text:'line one\nline two'}}]}]})});await flush();
+  assert.match(domText(h.elements.tasks.querySelector('[aria-label="执行日志"]')),/line two/);
+});
+
+test('live logs retain observed calls across response windows and reset when switching tasks',async()=>{
+  const h=harness();await h.init();
+  h.send('ui/notifications/tool-result',{structuredContent:task({toolCalls:[{toolCallId:'one',title:'first',status:'completed',rawOutput:'first result'}]})});
+  h.send('ui/notifications/tool-result',{structuredContent:task({toolCalls:[{toolCallId:'two',title:'second',status:'completed',rawOutput:{stdout:'second result'}}]})});
+  const text=domText(h.elements.tasks.querySelector('[aria-label="执行日志"]'));assert.match(text,/first result/);assert.match(text,/second result/);
+  h.send('ui/notifications/tool-result',{structuredContent:task({runId:other,toolCalls:[{toolCallId:'other',title:'other',status:'completed',rawOutput:'other result'}]})});
+  assert.doesNotMatch(domText(h.elements.tasks.querySelector('[aria-label="执行日志"]')),/first result/);
 });

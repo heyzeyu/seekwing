@@ -138,7 +138,7 @@ test('MCP task tools expose a self-contained read-only Apps resource with text f
   const c = await setup(t);
   const tools = (await c.client.listTools()).tools;
   const resourceUri = tools.find(t => t.name === 'start_task')._meta.ui.resourceUri;
-  assert.equal(resourceUri, 'ui://seekwing/tasks-v041.html');
+  assert.equal(resourceUri, 'ui://seekwing/tasks-v042.html');
   for(const name of ['list_tasks', 'get_task', 'wait_task', 'reply_task', 'cancel_task'])
     assert.equal(tools.find(t => t.name === name)._meta.ui.resourceUri, resourceUri);
   const resource = (await c.client.readResource({ uri: resourceUri })).contents[0];

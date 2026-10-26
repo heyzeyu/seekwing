@@ -12,7 +12,7 @@
 </style>
 </head>
 <body>
-<header><div class="brand"><span class="mark" aria-hidden="true">W</span><div><h1>SeekWing</h1><div class="sub">委派执行 · Codex 核验</div></div></div><div class="actions"><button id="back" hidden>任务列表</button><button id="refresh" disabled>刷新</button><label><input id="auto" type="checkbox" checked>自动刷新</label></div></header>
+<header><div class="brand"><span class="mark" aria-hidden="true">W</span><div><h1>SeekWing</h1><div class="sub">委派执行 · Codex 核验 · v0.4.2</div></div></div><div class="actions"><button id="back" hidden>任务列表</button><button id="refresh" disabled>刷新</button><label><input id="auto" type="checkbox" checked>自动刷新</label></div></header>
 <p id="scope" class="muted"></p><div id="error" role="alert"></div>
 <form id="bind" class="actions" hidden><label for="run">任务编号</label><input id="run" placeholder="sw-…" aria-label="任务编号" style="font:inherit;padding:7px;border:1px solid #dce1eb;border-radius:8px;min-width:280px"><button>查看输出</button><span class="muted">也可点击刷新查看本聊天任务</span></form>
 <main id="tasks" aria-live="polite"><p class="empty">等待任务数据…</p></main>
@@ -25,6 +25,7 @@
   const validRun = value => typeof value === 'string' && /^sw-[0-9a-f-]{36}$/.test(value);
   const liveQuery = runId => ({name:'get_task',arguments:{runId,outputTail:true}});
   let ready = false, busy = false, query, listQuery, snapshot, timer, rpcId = 0, hostOrigin, version = 0, toolName, latestInput;
+  let logRun;const logCalls=new Map();
   const pending = new Map();
   const node = (tag, text, cls) => { const n = document.createElement(tag); if(text !== undefined) n.textContent = String(text); if(cls) n.className = cls; return n; };
   const send = message => window.parent.postMessage({jsonrpc:'2.0',...message}, hostOrigin && hostOrigin !== 'null' ? hostOrigin : '*');
@@ -43,10 +44,31 @@
     if(ready && query && !busy && !document.hidden && el('auto').checked && rows.some(active)) timer = setTimeout(refresh, 1000);
   }
   function fact(dl, title, value) { dl.append(node('dt',title),node('dd',value || '未知')); }
+  function commandText(call) {
+    const value=call.rawInput?.command ?? call.rawInput?.cmd ?? call.rawInput?.argv;
+    if(typeof value==='string')return value;
+    if(Array.isArray(value))return value.map(arg=>String(arg)).join(' ');
+    return '';
+  }
+  function resultText(call) {
+    const parts=[];
+    for(const entry of Array.isArray(call.content)?call.content:[]){
+      const content=entry?.type==='content'?entry.content:entry;
+      if(content?.type==='text' && typeof content.text==='string')parts.push(content.text);
+      else if(entry?.type==='diff')parts.push(`文件变更：${entry.path || ''}\n${entry.newText || ''}`);
+    }
+    if(parts.length)return parts.join('\n');
+    if(typeof call.rawOutput==='string')return call.rawOutput;
+    if(call.rawOutput!=null)return JSON.stringify(call.rawOutput,null,2);
+    return '';
+  }
   function render(data) {
     const oldOutput=el('tasks').querySelector('[aria-label="代理输出（未经独立核验）"]');
     const oldScroll=oldOutput?.scrollTop || 0;
     const toolsOpen=el('tasks').querySelector('details')?.open || false;
+    const oldLog=el('tasks').querySelector('[aria-label="执行日志"]');
+    const logScroll=oldLog?.scrollTop || 0;
+    const logAtEnd=!oldLog || oldLog.scrollHeight-oldLog.clientHeight-logScroll<40;
     snapshot = data; el('tasks').replaceChildren();
     el('bind').hidden=true;
     const rows = data.tasks || (data.runId ? [data] : []);
@@ -71,7 +93,7 @@
       } else {
         const calls=Array.isArray(task.toolCalls)?task.toolCalls:[];
         const current=calls.filter(call=>['pending','in_progress'].includes(call.status)).at(-1);
-        if(current)card.append(node('p',`正在执行：${current.title || current.toolCallId || '工具调用'}`,'notice'));
+        if(current && active(task))card.append(node('p',`正在执行：${current.title || current.toolCallId || '工具调用'}`,'notice'));
         if(task.status === 'needs_attention') card.append(node('p',task.desktopAttention || '存在待处理权限请求。请在聊天中检查具体操作并处理；本卡片不会自动批准。','notice'));
         for(const field of ['error','cleanupError','persistenceError']) if(task[field]) card.append(node('p',task[field],'notice'));
         const out=node('pre',task.output || '暂无输出');out.setAttribute('aria-label','代理输出（未经独立核验）');card.append(out);
@@ -82,6 +104,25 @@
         if(task.nextOutputOffset != null) {const b=node('button','下一页输出');b.onclick=()=>load({name:'get_task',arguments:{runId:task.runId,outputOffset:task.nextOutputOffset}});paging.append(b);}
         const live=node('button',query?.arguments.outputTail?(active(task)?'正在跟随最新输出':'已显示最新输出'):'跟随最新输出');live.disabled=!!query?.arguments.outputTail;live.onclick=()=>load(liveQuery(task.runId));paging.append(live);
         card.append(paging);
+        if(logRun!==task.runId){logRun=task.runId;logCalls.clear();}
+        for(const call of calls)if(call.toolCallId){logCalls.set(call.toolCallId,call);if(logCalls.size>100)logCalls.delete(logCalls.keys().next().value);}
+        if(logCalls.size){
+          card.append(node('h3','实时执行日志'));
+          const log=node('section');log.setAttribute('aria-label','执行日志');log.style.maxHeight='420px';log.style.overflow='auto';
+          for(const call of logCalls.values()){
+            const entry=node('article',undefined,'card');
+            const label={pending:'等待执行',in_progress:'执行中',completed:'工具已返回',failed:'执行失败'}[call.status] || call.status || '执行中';
+            entry.append(node('div',`${label} · ${call.title || call.toolCallId}`,'muted'));
+            const command=commandText(call);if(command)entry.append(node('pre','$ '+command));
+            const output=resultText(call);
+            entry.append(node('pre',output.slice(-16000) || (['pending','in_progress'].includes(call.status)?'命令正在运行，等待执行方返回输出…':'暂无文本结果')));
+            log.append(entry);
+          }
+          card.append(log);
+          // Restore reading position unless the user was already following the end.
+          Promise.resolve().then(()=>{log.scrollTop=logAtEnd?log.scrollHeight:logScroll;});
+          if(task.toolCallsTruncated)card.append(node('p','工具记录较多，仅保留近期记录；新输出会继续显示。','muted'));
+        }
         if(calls.length) {const details=node('details');details.open=toolsOpen;details.append(node('summary',`最近工具记录（${task.toolCallCount} 次）`),node('pre',JSON.stringify(calls,null,2)));card.append(details);}
         if(task.status === 'completed') card.append(node('p','执行方已结束本轮。验收结果以 Codex 独立核验为准。','notice'));
       }
@@ -170,7 +211,7 @@
   };
   if(typeof ResizeObserver !== 'undefined') new ResizeObserver(resize).observe(document.body);
   if(window.parent===window){error(new Error('此卡片需要支持 MCP Apps 的宿主。仍可通过 SeekWing 工具查询任务。'));return;}
-  request('ui/initialize',{appInfo:{name:'seekwing-task-board',version:'0.4.1'},appCapabilities:{},protocolVersion:'2026-01-26'})
+  request('ui/initialize',{appInfo:{name:'seekwing-task-board',version:'0.4.2'},appCapabilities:{},protocolVersion:'2026-01-26'})
     .then(result=>{
       toolName=result?.hostContext?.toolInfo?.tool?.name;
       ready=true;el('refresh').disabled=false;

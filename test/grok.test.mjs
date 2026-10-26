@@ -16,6 +16,17 @@ async function setup(t, extra = {}) {
   return { ...c, root, state, workspace, extraEnv, trace: async () => (await readFile(trace, 'utf8')).trim().split('\n').map(JSON.parse) };
 }
 
+test('long-running sessions continue retaining new tool results after the first hundred calls',async t=>{
+  const c=await setup(t);
+  const run=await c.call('start_task',{backend:'grok',workspace:c.workspace,instruction:'MANY_TOOLS'});
+  const done=await finished(c,run.runId);
+  assert.equal(done.status,'completed');assert.equal(done.toolCallCount,100);assert.equal(done.toolCallsTruncated,true);
+  assert.ok(done.toolCalls.some(call=>call.toolCallId==='call-124'));
+  assert.ok(!done.toolCalls.some(call=>call.toolCallId==='call-0'));
+  const saved=JSON.parse(await readFile(path.join(c.state,'runs',run.runId+'.json'),'utf8'));
+  assert.equal(Object.keys(saved.toolCalls).length,100);assert.equal(saved.toolCalls['call-124'].content[0].content.text,'result 124');
+});
+
 test('Grok discovery, auth, exact model/reasoning, native sandbox and persisted resume through MCP', async t => {
   const c = await setup(t);
   const diagnostic = await c.call('doctor', { backend: 'grok' });
