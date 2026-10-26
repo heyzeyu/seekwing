@@ -121,3 +121,10 @@ test('live logs retain observed calls across response windows and reset when swi
   h.send('ui/notifications/tool-result',{structuredContent:task({runId:other,toolCalls:[{toolCallId:'other',title:'other',status:'completed',rawOutput:'other result'}]})});
   assert.doesNotMatch(domText(h.elements.tasks.querySelector('[aria-label="执行日志"]')),/first result/);
 });
+
+test('native Grok TaskOutput envelopes render stdout and exit code as readable results',async()=>{
+  const h=harness();await h.init();
+  h.send('ui/notifications/tool-result',{structuredContent:task({toolCalls:[{toolCallId:'native',status:'completed',content:[{type:'content',content:{type:'text',text:JSON.stringify({type:'TaskOutput',Result:{output:'line one\nline two',exit_code:0,output_file:'/native/private/log'}})}}]}]})});
+  const log=domText(h.elements.tasks.querySelector('[aria-label="执行日志"]'));
+  assert.match(log,/line two/);assert.match(log,/退出码：0/);assert.doesNotMatch(log,/output_file|"Result"/);
+});

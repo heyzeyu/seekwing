@@ -225,7 +225,7 @@ npm test
 npm pack --dry-run
 ```
 
-83 deterministic tests use independent DeepSeek/Grok ACP wire fixtures and a native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation and permission rejection, deadlines, output caps, redaction, workspace-root validation and crash recovery. Grok coverage includes noninteractive auth, exact model selection, backend isolation, legacy history, refusing prompts under an unexpected sandbox, and cross-process cancellation. No provider credentials are needed.
+84 deterministic tests use independent DeepSeek/Grok ACP wire fixtures and a native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation and permission rejection, deadlines, output caps, redaction, workspace-root validation and crash recovery. Grok coverage includes noninteractive auth, exact model selection, backend isolation, legacy history, refusing prompts under an unexpected sandbox, and cross-process cancellation. No provider credentials are needed.
 
 The opt-in smoke test **calls DeepSeek or Grok and consumes normal provider usage**. It edits only its generated scratch workspace and independently reruns the example test:
 

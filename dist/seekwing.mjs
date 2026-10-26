@@ -130,16 +130,25 @@ Grok stderr: `+e.stderr:""}`))}finally{await e.stop()}}function sf(t,e,r,i,n,o,a
     if(Array.isArray(value))return value.map(arg=>String(arg)).join(' ');
     return '';
   }
+  function readableOutput(value) {
+    let parsed=value;
+    if(typeof value==='string')try{parsed=JSON.parse(value);}catch{return value;}
+    const result=parsed?.Result && typeof parsed.Result==='object'?parsed.Result:parsed;
+    if(result && typeof result==='object'){
+      const text=['stdout','stderr','output'].filter(key=>typeof result[key]==='string').map(key=>result[key]);
+      if(text.length){if(typeof result.exit_code==='number')text.push(\`\u9000\u51FA\u7801\uFF1A\${result.exit_code}\`);return text.join('\\n');}
+    }
+    return typeof value==='string'?value:JSON.stringify(value,null,2);
+  }
   function resultText(call) {
     const parts=[];
     for(const entry of Array.isArray(call.content)?call.content:[]){
       const content=entry?.type==='content'?entry.content:entry;
-      if(content?.type==='text' && typeof content.text==='string')parts.push(content.text);
+      if(content?.type==='text' && typeof content.text==='string')parts.push(readableOutput(content.text));
       else if(entry?.type==='diff')parts.push(\`\u6587\u4EF6\u53D8\u66F4\uFF1A\${entry.path || ''}\\n\${entry.newText || ''}\`);
     }
     if(parts.length)return parts.join('\\n');
-    if(typeof call.rawOutput==='string')return call.rawOutput;
-    if(call.rawOutput!=null)return JSON.stringify(call.rawOutput,null,2);
+    if(call.rawOutput!=null)return readableOutput(call.rawOutput);
     return '';
   }
   function render(data) {
