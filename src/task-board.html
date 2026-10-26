@@ -14,14 +14,17 @@
 <body>
 <header><div class="brand"><span class="mark" aria-hidden="true">W</span><div><h1>SeekWing</h1><div class="sub">委派执行 · Codex 核验</div></div></div><div class="actions"><button id="back" hidden>任务列表</button><button id="refresh" disabled>刷新</button><label><input id="auto" type="checkbox" checked>自动刷新</label></div></header>
 <p id="scope" class="muted"></p><div id="error" role="alert"></div>
+<form id="bind" class="actions" hidden><label for="run">任务编号</label><input id="run" placeholder="sw-…" aria-label="任务编号" style="font:inherit;padding:7px;border:1px solid #dce1eb;border-radius:8px;min-width:280px"><button>查看输出</button><span class="muted">也可点击刷新查看本聊天任务</span></form>
 <main id="tasks" aria-live="polite"><p class="empty">等待任务数据…</p></main>
 <footer id="foot">任务结束后仍需 Codex 独立检查文件、测试和验收条件。</footer>
 <script>
 (() => {
   const el = id => document.getElementById(id);
   const statuses = {starting:'启动中',running:'执行中',needs_attention:'等待处理',cancelling:'取消中',completed:'执行结束 · 待核验',incomplete:'未完成',failed:'失败',cancelled:'已取消',interrupted:'已中断'};
-  const active = task => ['starting','running','cancelling'].includes(task.status);
-  let ready = false, busy = false, query, listQuery, snapshot, timer, rpcId = 0, hostOrigin;
+  const active = task => ['starting','running','needs_attention','cancelling'].includes(task.status);
+  const validRun = value => typeof value === 'string' && /^sw-[0-9a-f-]{36}$/.test(value);
+  const liveQuery = runId => ({name:'get_task',arguments:{runId,outputTail:true}});
+  let ready = false, busy = false, query, listQuery, snapshot, timer, rpcId = 0, hostOrigin, version = 0, toolName, latestInput;
   const pending = new Map();
   const node = (tag, text, cls) => { const n = document.createElement(tag); if(text !== undefined) n.textContent = String(text); if(cls) n.className = cls; return n; };
   const send = message => window.parent.postMessage({jsonrpc:'2.0',...message}, hostOrigin && hostOrigin !== 'null' ? hostOrigin : '*');
@@ -33,14 +36,19 @@
     });
   }
   function error(e) { clearTimeout(timer); el('error').textContent = e?.message || String(e); }
+  function setQuery(next) { if(JSON.stringify(query)!==JSON.stringify(next)){query=next;version++;} }
   function schedule() {
     clearTimeout(timer);
     const rows = snapshot?.tasks || (snapshot?.runId ? [snapshot] : []);
-    if(ready && query && !busy && !document.hidden && el('auto').checked && rows.some(active)) timer = setTimeout(refresh, 5000);
+    if(ready && query && !busy && !document.hidden && el('auto').checked && rows.some(active)) timer = setTimeout(refresh, 1000);
   }
   function fact(dl, title, value) { dl.append(node('dt',title),node('dd',value || '未知')); }
   function render(data) {
+    const oldOutput=el('tasks').querySelector('[aria-label="代理输出（未经独立核验）"]');
+    const oldScroll=oldOutput?.scrollTop || 0;
+    const toolsOpen=el('tasks').querySelector('details')?.open || false;
     snapshot = data; el('tasks').replaceChildren();
+    el('bind').hidden=true;
     const rows = data.tasks || (data.runId ? [data] : []);
     el('scope').textContent = data.scope === 'current' ? '本聊天派发的任务' : data.scope === 'all' ? '本机全部任务' : '单个运行记录';
     if(data.ownershipWarning) el('tasks').append(node('p',data.ownershipWarning,'notice'));
@@ -59,47 +67,88 @@
       if(task.modelValue) fact(dl,'模型',task.modelValue);
       card.append(dl);
       if(data.tasks) {
-        const button=node('button','查看进度和输出');button.onclick=()=>load({name:'get_task',arguments:{runId:task.runId}});card.append(button);
+        const button=node('button','查看进度和输出');button.onclick=()=>load(liveQuery(task.runId));card.append(button);
       } else {
+        const calls=Array.isArray(task.toolCalls)?task.toolCalls:[];
+        const current=calls.filter(call=>['pending','in_progress'].includes(call.status)).at(-1);
+        if(current)card.append(node('p',`正在执行：${current.title || current.toolCallId || '工具调用'}`,'notice'));
         if(task.status === 'needs_attention') card.append(node('p',task.desktopAttention || '存在待处理权限请求。请在聊天中检查具体操作并处理；本卡片不会自动批准。','notice'));
         for(const field of ['error','cleanupError','persistenceError']) if(task[field]) card.append(node('p',task[field],'notice'));
         const out=node('pre',task.output || '暂无输出');out.setAttribute('aria-label','代理输出（未经独立核验）');card.append(out);
         if(task.outputTruncated) card.append(node('p','输出已达到保存上限；请结合文件及工具证据核查。','notice'));
         const paging=node('div',undefined,'actions');
+        if(task.outputOffset > 0) {const b=node('button','上一页输出');b.onclick=()=>load({name:'get_task',arguments:{runId:task.runId,outputOffset:Math.max(0,task.outputOffset-12000)}});paging.append(b);}
         if(task.outputOffset > 0) {const b=node('button','返回输出开头');b.onclick=()=>load({name:'get_task',arguments:{runId:task.runId}});paging.append(b);}
         if(task.nextOutputOffset != null) {const b=node('button','下一页输出');b.onclick=()=>load({name:'get_task',arguments:{runId:task.runId,outputOffset:task.nextOutputOffset}});paging.append(b);}
+        const live=node('button',query?.arguments.outputTail?(active(task)?'正在跟随最新输出':'已显示最新输出'):'跟随最新输出');live.disabled=!!query?.arguments.outputTail;live.onclick=()=>load(liveQuery(task.runId));paging.append(live);
         card.append(paging);
-        if(task.toolCalls?.length) {const details=node('details');details.append(node('summary',`最近工具记录（${task.toolCallCount} 次）`),node('pre',JSON.stringify(task.toolCalls,null,2)));card.append(details);}
+        if(calls.length) {const details=node('details');details.open=toolsOpen;details.append(node('summary',`最近工具记录（${task.toolCallCount} 次）`),node('pre',JSON.stringify(calls,null,2)));card.append(details);}
         if(task.status === 'completed') card.append(node('p','执行方已结束本轮。验收结果以 Codex 独立核验为准。','notice'));
       }
       el('tasks').append(card);
+      if(!data.tasks){const out=card.querySelector('[aria-label="代理输出（未经独立核验）"]');out.scrollTop=query?.arguments.outputTail?out.scrollHeight:oldScroll;}
     }
     el('back').hidden = !!data.tasks || !listQuery;
-    el('foot').textContent = `快照更新于 ${new Date().toLocaleTimeString()} · 执行结束不代表验收通过。`;
+    el('foot').textContent = `更新于 ${new Date().toLocaleTimeString()} · ${rows.some(active)?'每秒刷新':rows.length?'任务已结束':'暂无任务'} · 执行结束不代表验收通过。`;
     schedule();
   }
   function receive(response, fromHost = false) {
     if(response?.isError) throw new Error((response.content || []).filter(x=>x.type==='text').map(x=>x.text).join('\n') || '无法读取任务。');
-    const data = response?.structuredContent;
-    if(!data || (!Array.isArray(data.tasks) && !data.runId)) return;
+    let data = response?.structuredContent;
+    const payload = value => value && typeof value==='object' && (Array.isArray(value.tasks) || validRun(value.runId));
+    if(!payload(data) && payload(response))data=response;
+    if(!payload(data)) for(const block of response?.content || []) {
+      if(block.type!=='text' || typeof block.text!=='string')continue;
+      try{const value=JSON.parse(block.text);if(payload(value)){data=value;break;}}catch{}
+    }
+    if(!payload(data))return false;
     if(Array.isArray(data.tasks)) {
-      listQuery = {name:'list_tasks',arguments:data.filters || {scope:data.scope || 'current'}}; query=listQuery;
-    } else if(fromHost || !query || query.name !== 'get_task' || query.arguments.runId !== data.runId) {
-      query = {name:'get_task',arguments:{runId:data.runId}};
+      listQuery = {name:'list_tasks',arguments:data.filters || {scope:data.scope || 'current'}};setQuery(listQuery);
+    } else if(!query || query.name !== 'get_task' || query.arguments.runId !== data.runId) {
+      setQuery(liveQuery(data.runId));
     }
     el('error').textContent='';render(data);
+    // A completed wait result may contain only the first output page. Read the
+    // tail once even though there will be no active-task polling afterwards.
+    if(fromHost && ready && query?.name==='get_task' && query.arguments.outputTail && data.nextOutputOffset != null)
+      void Promise.resolve().then(()=>load());
+    return true;
   }
   async function load(next) {
-    if(!ready || busy) return;
+    if(!ready)return;
+    if(next)setQuery(next);
+    if(busy)return;
     clearTimeout(timer); busy=true;el('refresh').disabled=true;
-    const previous=query;query=next;
-    try {receive(await request('tools/call',next));}
-    catch(e){query=previous;error(e);return;}
+    const current=query, selectedVersion=version;
+    try {const result=await request('tools/call',current);if(selectedVersion===version && !receive(result))throw new Error('宿主返回了无法识别的任务数据，请刷新重试。');}
+    catch(e){if(selectedVersion===version){error(e);return;}}
     finally{busy=false;el('refresh').disabled=!ready;}
+    if(selectedVersion!==version && query!==current){void load();return;}
     schedule();
   }
-  function refresh(){if(query) void load(query);}
+  function refresh(){void load(query || {name:'list_tasks',arguments:{scope:'current'}});}
+  function input(params) {
+    latestInput=params;
+    const args=params?.arguments ?? params;
+    if(!args || typeof args!=='object')return;
+    if(validRun(args.runId)) {
+      if(query?.name==='get_task' && query.arguments.runId===args.runId)return;
+      setQuery(liveQuery(args.runId));
+    } else if(toolName==='list_tasks' || toolName?.endsWith('__list_tasks')) {
+      const filter={};for(const key of ['limit','scope','callerThreadId','backend','rootRunId','status'])if(args[key]!==undefined)filter[key]=args[key];
+      setQuery({name:'list_tasks',arguments:{scope:'current',...filter}});
+    } else return;
+    if(ready)void load();
+  }
+  function globals(value) {
+    if(!value || typeof value!=='object')return;
+    const metadata=value.toolResponseMetadata;
+    const response=metadata?.mcp_tool_result ?? metadata?.call_tool_result ?? value.toolOutput;
+    if(response)receive(response,true);
+    if(value.toolInput)input(value.toolInput);
+  }
   el('refresh').onclick=refresh;el('back').onclick=()=>listQuery && load(listQuery);
+  el('bind').onsubmit=event=>{event.preventDefault();const id=el('run').value.trim();if(!validRun(id)){error(new Error('请填写有效的 sw- 任务编号。'));return;}void load(liveQuery(id));};
   el('auto').onchange=schedule;document.addEventListener('visibilitychange',schedule);
   window.addEventListener('pagehide',()=>{clearTimeout(timer);for(const p of pending.values()){clearTimeout(p.timeout);p.reject(new Error('视图已关闭'));}pending.clear();});
   window.addEventListener('message',event=>{
@@ -110,8 +159,10 @@
       if(!hostOrigin) hostOrigin=event.origin;
       if(msg.error)p.reject(new Error(msg.error.message || '宿主请求失败'));else p.resolve(msg.result);
     } else if(msg.method==='ui/notifications/tool-result') {try{receive(msg.params,true);}catch(e){error(e);}}
+    else if(msg.method==='ui/notifications/tool-input') {input(msg.params);}
     else if(msg.method==='ui/resource-teardown') {clearTimeout(timer);ready=false;if(msg.id!==undefined)send({id:msg.id,result:{}});}
   });
+  window.addEventListener('openai:set_globals',event=>{try{globals(event.detail?.globals);}catch(e){error(e);}});
   let lastHeight = 0;
   const resize = () => {
     const height = Math.ceil(document.body.getBoundingClientRect().height);
@@ -119,8 +170,17 @@
   };
   if(typeof ResizeObserver !== 'undefined') new ResizeObserver(resize).observe(document.body);
   if(window.parent===window){error(new Error('此卡片需要支持 MCP Apps 的宿主。仍可通过 SeekWing 工具查询任务。'));return;}
-  request('ui/initialize',{appInfo:{name:'seekwing-task-board',version:'0.4.0'},appCapabilities:{},protocolVersion:'2026-01-26'})
-    .then(()=>{ready=true;el('refresh').disabled=false;send({method:'ui/notifications/initialized',params:{}});resize();schedule();})
+  request('ui/initialize',{appInfo:{name:'seekwing-task-board',version:'0.4.1'},appCapabilities:{},protocolVersion:'2026-01-26'})
+    .then(result=>{
+      toolName=result?.hostContext?.toolInfo?.tool?.name;
+      ready=true;el('refresh').disabled=false;
+      send({method:'ui/notifications/initialized',params:{}});
+      try{globals(window.openai);}catch(e){error(e);}
+      if(latestInput)input(latestInput);
+      if(query)void load();
+      else {el('bind').hidden=false;el('tasks').firstElementChild.textContent='尚未收到任务编号，可输入编号或刷新查看本聊天任务。';}
+      resize();schedule();
+    })
     .catch(error);
 })();
 </script>

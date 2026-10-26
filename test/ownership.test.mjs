@@ -138,7 +138,7 @@ test('MCP task tools expose a self-contained read-only Apps resource with text f
   const c = await setup(t);
   const tools = (await c.client.listTools()).tools;
   const resourceUri = tools.find(t => t.name === 'start_task')._meta.ui.resourceUri;
-  assert.equal(resourceUri, 'ui://seekwing/tasks.html');
+  assert.equal(resourceUri, 'ui://seekwing/tasks-v041.html');
   for(const name of ['list_tasks', 'get_task', 'wait_task', 'reply_task', 'cancel_task'])
     assert.equal(tools.find(t => t.name === name)._meta.ui.resourceUri, resourceUri);
   const resource = (await c.client.readResource({ uri: resourceUri })).contents[0];
@@ -149,4 +149,16 @@ test('MCP task tools expose a self-contained read-only Apps resource with text f
   const result = await c.client.callTool({ name: 'list_tasks', arguments: {} });
   assert.equal(result.content[0].type, 'text');
   assert.ok(Array.isArray(result.structuredContent.tasks));
+});
+
+test('live output tails follow new text after the first page while ordinary pagination stays compatible',async t=>{
+  const c=await setup(t);
+  const start=await c.call('start_task',{workspace:c.workspace,instruction:'LONG'});await finished(c,start.runId);
+  const first=await c.call('get_task',{runId:start.runId,outputLimit:20});
+  assert.equal(first.outputOffset,0);assert.equal(first.nextOutputOffset,20);
+  const tail=await c.call('get_task',{runId:start.runId,outputTail:true,outputOffset:10,outputLimit:20});
+  assert.equal(tail.outputOffset,tail.outputLength-20);assert.equal(tail.nextOutputOffset,null);assert.equal(tail.output.length,20);
+  const file=path.join(c.state,'runs',start.runId+'.json');const saved=JSON.parse(await readFile(file,'utf8'));saved.output+='new tail';await writeFile(file,JSON.stringify(saved));
+  const next=await c.call('get_task',{runId:start.runId,outputTail:true,outputLimit:20});
+  assert.match(next.output,/new tail$/);assert.equal(next.outputOffset,next.outputLength-20);
 });

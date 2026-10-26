@@ -8,7 +8,9 @@
 
 SeekWing lets Codex assign scoped work to DeepSeek Harness or Grok, wait for results, continue the same session with corrections, and independently check files and tests. **Seek** comes from DeepSeek; **Wing** is your coding wingman.
 
-**v0.4.0 adds caller attribution, capability discovery and optional MCP Apps task cards.** See [visibility and ownership](docs/task-visibility.zh-CN.md). Cards render only in compatible hosts; native Codex sidebar chats require an explicit host-created supervisor workflow.
+**v0.4.1 fixes empty task cards:** bind the run from tool input before completion, read compatible result formats, and follow the latest output every second. Reopen the card in a fresh chat after updating.
+
+**v0.4.0 added caller attribution, capability discovery and optional MCP Apps task cards.** See [visibility and ownership](docs/task-visibility.zh-CN.md). Cards render only in compatible hosts; native Codex sidebar chats require an explicit host-created supervisor workflow.
 
 **v0.3.0 added the Grok adapter:** one MCP toolset with `backend: deepseek | grok`, shared durable tasks and independent runtime configuration. Existing DeepSeek defaults and history stay compatible. [Implementation and real test evidence](docs/grok-adapter.zh-CN.md).
 
@@ -153,7 +155,7 @@ Task records retain the original delegating `origin`, this turn's `submittedBy`,
 
 `list_tasks` defaults to `scope: auto`: current-chat origin when known, otherwise an explicitly labeled all-local listing. `scope: current` returns no claimed tasks if identity is missing; `scope: all` also includes legacy/unidentified runs. Replies preserve origin and record the current submitter separately.
 
-Task tools return a self-contained MCP Apps card for compatible hosts, with status, read-only refresh, paginated output and tool evidence. Active visible cards refresh every five seconds, pause when hidden and stop on errors or completion. Text/structured results remain the fallback. No permission grants, extra model calls, public deployment or native Codex chats are performed by the card. A separate Codex supervisor chat is an optional host workflow documented in the skill, not an external native-agent registration API.
+Task tools return a self-contained MCP Apps card for compatible hosts, with status, read-only refresh, paginated output and tool evidence. Active visible cards refresh every second, pause when hidden and stop on errors or completion. Text/structured results remain the fallback. No permission grants, extra model calls, public deployment or native Codex chats are performed by the card. A separate Codex supervisor chat is an optional host workflow documented in the skill, not an external native-agent registration API.
 
 ## Permissions and data
 
@@ -221,7 +223,7 @@ npm test
 npm pack --dry-run
 ```
 
-71 deterministic tests use independent DeepSeek/Grok ACP wire fixtures and a native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation and permission rejection, deadlines, output caps, redaction, workspace-root validation and crash recovery. Grok coverage includes noninteractive auth, exact model selection, backend isolation, legacy history, refusing prompts under an unexpected sandbox, and cross-process cancellation. No provider credentials are needed.
+80 deterministic tests use independent DeepSeek/Grok ACP wire fixtures and a native Host adapter, covering both modes, loopback authentication, session ownership, cancellation and explicit failure without fallback. They cover completion, durable follow-up, idempotency, permission forwarding, session locks, cross-process cancellation and permission rejection, deadlines, output caps, redaction, workspace-root validation and crash recovery. Grok coverage includes noninteractive auth, exact model selection, backend isolation, legacy history, refusing prompts under an unexpected sandbox, and cross-process cancellation. No provider credentials are needed.
 
 The opt-in smoke test **calls DeepSeek or Grok and consumes normal provider usage**. It edits only its generated scratch workspace and independently reruns the example test:
 

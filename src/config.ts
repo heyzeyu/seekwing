@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
-export const VERSION = '0.4.0';
+export const VERSION = '0.4.1';
 export type Backend = 'deepseek' | 'grok';
 export type PermissionMode = 'read-only' | 'workspace-write';
 export type SessionMode = 'background' | 'desktop';

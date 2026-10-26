@@ -59,6 +59,7 @@ try {
   const large = await c.call('start_task', { title: '翻页与复核状态测试', workspace, instruction: 'LONG' });
   await finished(c, large.runId);
   await send(await c.client.callTool({ name: 'get_task', arguments: { runId: large.runId } }));
+  await frame.getByRole('button', { name: '返回输出开头' }).click();
   await frame.getByRole('button', { name: '下一页输出' }).click();
   await frame.getByRole('button', { name: '返回输出开头' }).waitFor();
   assert.match(await frame.locator('.badge').innerText(), /待核验/);
