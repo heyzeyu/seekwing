@@ -46,24 +46,27 @@ export function createTerminal(document) {
   viewport.setAttribute('aria-label', '执行日志');viewport.tabIndex = 0;
   const empty = node('div', '等待 CLI 返回命令和输出…', 'terminal-empty');
   bar.append(state, follow);element.append(bar, viewport);viewport.append(empty);
-  let following = true;
+  let following = true, pausedByButton = false;
   const entries = new Map();
   const label = () => {
-    follow.textContent = following ? '暂停跟随' : '跟随最新';
+    const text = following ? '暂停跟随' : '跟随最新';
+    if(follow.textContent !== text)follow.textContent = text;
     follow.setAttribute('aria-pressed', String(following));
   };
   viewport.onscroll = () => {
+    if (pausedByButton) return;
     following = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop < 40;
     label();
   };
   follow.onclick = () => {
-    following = !following;label();
+    following = !following;pausedByButton = !following;label();
     if (following) viewport.scrollTop = viewport.scrollHeight;
   };
   label();
   return { element, update(task) {
     const status = { starting:'启动中', running:'执行中', needs_attention:'等待处理', cancelling:'取消中', completed:'已结束 · 待核验', incomplete:'未完成', failed:'失败', cancelled:'已取消', interrupted:'已中断' }[task.status] || task.status;
-    state.textContent = `${task.backend === 'grok' ? 'Grok' : 'DeepSeek'} CLI · ${status}`;
+    const stateText = `${task.backend === 'grok' ? 'Grok' : 'DeepSeek'} CLI · ${status}`;
+    if(state.textContent !== stateText)state.textContent = stateText;
     element.dataset.active = String(['starting','running','needs_attention','cancelling'].includes(task.status));
     const scroll = viewport.scrollTop;
     for (const call of Array.isArray(task.toolCalls) ? task.toolCalls : []) {
@@ -84,7 +87,8 @@ export function createTerminal(document) {
       // Native titles sometimes contain an entire file result. The full command
       // and output remain below; keep the terminal's status line short.
       const title = String(value.title || value.toolCallId).split('\n')[0];
-      entry.title.textContent = `[${status}] ${title.length > 180 ? title.slice(0,180) + '…' : title}`;
+      const titleText = `[${status}] ${title.length > 180 ? title.slice(0,180) + '…' : title}`;
+      if(entry.title.textContent !== titleText)entry.title.textContent = titleText;
       entry.block.dataset.status = value.status || 'pending';
       const command = commandText(value);
       if (entry.command.textContent !== '$ ' + command) entry.command.textContent = '$ ' + command;
@@ -104,6 +108,7 @@ export function createTerminal(document) {
       entries.get(key).block.remove();entries.delete(key);
     }
     if (!entries.size) empty.textContent = ['completed','failed','cancelled','incomplete','interrupted'].includes(task.status) ? '本轮没有可显示的 CLI 工具输出。' : '等待 CLI 返回命令和输出…';
+    element.dataset.empty = String(!entries.size);
     viewport.scrollTop = following ? viewport.scrollHeight : scroll;
     label();
   } };

@@ -31,8 +31,8 @@ function harness({globals}={}){
   const send=(method,params)=>listeners.get('message')({source:host,origin:'https://host.example',data:{jsonrpc:'2.0',method,params}});
   const reply=(request,result)=>listeners.get('message')({source:host,origin:'https://host.example',data:{jsonrpc:'2.0',id:request.id,result}});
   const calls=()=>sent.filter(m=>m.method==='tools/call');
-  return{elements,sent,timers,send,reply,calls,
-    init:async()=>{reply(sent[0],{hostContext:{toolInfo:{tool:{name:'wait_task'}}}});await flush();},
+  return{document,elements,sent,timers,send,reply,calls,
+    init:async(context={})=>{reply(sent[0],{hostContext:{toolInfo:{tool:{name:'wait_task'}},...context}});await flush();},
     poll:async()=>{const entry=[...timers].find(([,t])=>t.ms===500);assert.ok(entry,'active task should schedule a half-second refresh');timers.delete(entry[0]);entry[1].fn();await flush();},
     globals:value=>listeners.get('openai:set_globals')({detail:{globals:value}})};
 }
@@ -247,4 +247,83 @@ test('terminal history stays bounded while retaining an active tool and the newe
   assert.equal(log.querySelectorAll('.terminal-entry').length,100);
   assert.ok(log.querySelector('[data-tool-call-id="active"]'));
   assert.match(log.textContent,/output-124/);assert.equal(log.querySelector('[data-tool-call-id="tool-0"]'),null);
+});
+
+test('background reads keep the card, controls and unchanged Markdown nodes mounted',async()=>{
+  const h=harness();await h.init();
+  const show=value=>h.send('ui/notifications/tool-result',{structuredContent:value});
+  show(task({output:'## 结果\n\n已完成的段落。'}));
+  const card=h.elements.tasks.firstElementChild,details=card.querySelector('.task-details');
+  const out=output(h),heading=out.querySelector('h2'),paragraph=out.querySelector('p'),expand=card.querySelector('.reply-section button');
+  details.open=true;
+  show(task({output:'## 结果\n\n已完成的段落。',toolCalls:[{toolCallId:'new',status:'in_progress'}]}));
+  assert.equal(h.elements.tasks.firstElementChild,card);assert.equal(card.querySelector('.task-details'),details);
+  assert.equal(output(h),out);assert.equal(out.querySelector('h2'),heading);assert.equal(out.querySelector('p'),paragraph);
+  assert.equal(card.querySelector('.reply-section button'),expand);assert.equal(details.open,true);
+  show(task({output:'## 结果\n\n已完成的段落。\n\n新段落。'}));
+  assert.equal(out.querySelector('p'),paragraph);assert.equal(out.querySelectorAll('p').length,2);
+  assert.equal(h.elements.tasks.hasAttribute('aria-live'),false,'Do not announce the entire log on every poll');
+});
+
+test('long reply expansion survives updates and completed replies open at their beginning',async()=>{
+  const h=harness();await h.init();
+  h.send('ui/notifications/tool-result',{structuredContent:task({status:'completed',output:'## 起点\n\n正文'})});
+  const out=output(h),expand=h.elements.tasks.querySelector('.reply-section button');
+  assert.equal(out.scrollTop,0);expand.onclick();assert.equal(out.dataset.expanded,'true');assert.equal(expand.getAttribute('aria-expanded'),'true');
+  out.scrollTop=20;
+  h.send('ui/notifications/tool-result',{structuredContent:task({status:'completed',output:'## 起点\n\n正文\n\n补充'})});
+  assert.equal(out.dataset.expanded,'true');assert.equal(out.scrollTop,20);
+  expand.onclick();assert.equal(out.dataset.expanded,'false');
+});
+
+test('host theme follows initialization and partial context changes without resetting task UI',async()=>{
+  const h=harness();await h.init({theme:'dark'});assert.equal(h.document.documentElement.dataset.theme,'dark');
+  h.send('ui/notifications/tool-result',{structuredContent:task()});const card=h.elements.tasks.firstElementChild;
+  h.send('ui/notifications/host-context-changed',{theme:'light'});assert.equal(h.document.documentElement.dataset.theme,'light');
+  h.send('ui/notifications/host-context-changed',{locale:'zh-CN'});assert.equal(h.document.documentElement.dataset.theme,'light');
+  h.send('ui/notifications/host-context-changed',{theme:'<script>bad</script>'});assert.equal(h.document.documentElement.dataset.theme,'light');
+  assert.equal(h.elements.tasks.firstElementChild,card);
+});
+
+test('explicit terminal pause survives programmatic scroll events and ongoing output',async()=>{
+  const h=harness();await h.init();
+  const show=text=>h.send('ui/notifications/tool-result',{structuredContent:task({toolCalls:[{toolCallId:'one',status:'in_progress',rawOutput:text}]})});
+  show('one');const log=h.elements.tasks.querySelector('.terminal-viewport'),follow=h.elements.tasks.querySelector('.terminal-bar button');
+  follow.onclick();log.onscroll();assert.equal(follow.textContent,'跟随最新');
+  show('one\ntwo');log.onscroll();assert.equal(follow.textContent,'跟随最新');assert.match(log.textContent,/two/);
+  follow.onclick();assert.equal(follow.textContent,'暂停跟随');
+});
+
+test('empty, attention and failed states are explicit, with no automatic approval controls',async()=>{
+  const h=harness();await h.init();
+  const show=value=>h.send('ui/notifications/tool-result',{structuredContent:task(value)});
+  show({status:'starting',output:''});assert.match(output(h).textContent,/等待代理回复/);
+  assert.equal(h.elements.tasks.querySelector('.terminal').dataset.empty,'true');
+  show({status:'needs_attention',output:''});assert.match(h.elements.tasks.querySelector('.notices').textContent,/等待你处理/);
+  show({status:'failed',output:'',error:'<img src=x onerror=alert(1)>'});
+  assert.match(output(h).textContent,/本轮没有文字回复/);assert.equal(h.elements.tasks.querySelector('.badge').dataset.status,'failed');
+  assert.equal(h.elements.tasks.querySelector('.notices img'),null);assert.match(h.elements.tasks.querySelector('.notices').textContent,/<img/);
+  assert.equal(h.elements.tasks.querySelector('.notices button'),null);
+});
+
+test('an older output page starts at its beginning and explicit latest following reaches the end',async()=>{
+  const h=harness();await h.init();
+  h.send('ui/notifications/tool-result',{structuredContent:task({output:'tail',outputOffset:12000,outputLength:24000,outputTail:true})});
+  const out=output(h);out.scrollTop=500;
+  h.elements.tasks.querySelector('.paging').children[1].onclick();await flush();
+  h.reply(h.calls().at(-1),{structuredContent:task({output:'start',outputOffset:0,nextOutputOffset:12000,outputLength:24000})});await flush();
+  assert.equal(out.scrollTop,0);
+  h.elements.tasks.querySelector('.paging').children[3].onclick();await flush();
+  h.reply(h.calls().at(-1),{structuredContent:task({output:'tail',outputOffset:12000,outputLength:24000,outputTail:true})});await flush();
+  assert.equal(out.scrollTop,1000);
+});
+
+test('read errors label synchronization as interrupted and do not silently resume via the toggle',async()=>{
+  const h=harness();await h.init();h.send('ui/notifications/tool-result',{structuredContent:task()});await h.poll();
+  h.reply(h.calls().at(-1),{isError:true,content:[{type:'text',text:'Temporary connection failure'}]});await flush();
+  assert.match(h.elements.foot.textContent,/同步中断/);
+  h.elements.auto.checked=false;h.elements.auto.onchange();h.elements.auto.checked=true;h.elements.auto.onchange();
+  assert.ok(![...h.timers.values()].some(timer=>timer.ms===500));assert.match(h.elements.foot.textContent,/同步中断/);
+  h.elements.refresh.onclick();await flush();h.reply(h.calls().at(-1),{structuredContent:task()});await flush();
+  assert.match(h.elements.foot.textContent,/实时同步/);await h.poll();
 });

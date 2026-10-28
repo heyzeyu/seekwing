@@ -5,37 +5,32 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SeekWing · 委派任务</title>
 <style>
-  :root{color-scheme:light dark;font-family:var(--font-sans,system-ui,-apple-system,sans-serif);color:var(--color-text-primary,#182235);background:var(--color-background-primary,#fff);font-size:14px}
-  *{box-sizing:border-box}body{margin:0;padding:18px}header,.actions,.row{display:flex;align-items:center;gap:10px}header{justify-content:space-between;margin-bottom:16px}.brand{display:flex;align-items:center;gap:10px}.mark{background:#4d6bfe;color:#fff;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;font-weight:800}h1{font-size:16px;margin:0}h2{font-size:15px;margin:0;overflow-wrap:anywhere}.sub,.muted{font-size:12px;color:var(--color-text-secondary,#637085)}.sub{margin-top:3px}.actions{flex-wrap:wrap}button{font:inherit;border:1px solid var(--color-border-primary,#dce1eb);background:var(--color-background-primary,#fff);color:inherit;border-radius:8px;padding:7px 11px;cursor:pointer}button:hover{border-color:#4d6bfe}button:focus-visible{outline:2px solid #4d6bfe;outline-offset:2px}button:disabled{opacity:.5;cursor:default}label{font-size:12px;display:flex;align-items:center;gap:4px}input{accent-color:#4d6bfe}.card{border:1px solid var(--color-border-primary,#e2e6ef);border-radius:12px;padding:14px;margin:10px 0}.row{justify-content:space-between;align-items:flex-start}.badge{font-size:11px;white-space:nowrap;background:var(--color-background-secondary,#f1f4fa);border-radius:6px;padding:4px 7px}.badge[data-active=true]{color:#3150cf;background:#edf1ff}.facts{display:grid;grid-template-columns:90px minmax(0,1fr);gap:7px 10px;margin:13px 0;font-size:12px}.facts dt{color:var(--color-text-secondary,#637085)}.facts dd{margin:0;overflow-wrap:anywhere}.notice{border-left:3px solid #4d6bfe;padding:8px 10px;background:var(--color-background-secondary,#f6f8fc);margin:12px 0;font-size:12px;line-height:1.6}pre{font:12px/1.65 ui-monospace,SFMono-Regular,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:350px;overflow:auto;background:var(--color-background-secondary,#f6f8fc);padding:12px;border-radius:8px}#error{color:#b42318;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}footer{font-size:11px;color:var(--color-text-secondary,#637085);margin-top:14px}details{margin-top:10px}summary{cursor:pointer;font-size:12px}.empty{padding:24px 0;text-align:center;color:var(--color-text-secondary,#637085)}[hidden]{display:none!important}
-  @media(prefers-color-scheme:dark){:root{color:var(--color-text-primary,#e9edf5);background:var(--color-background-primary,#171b24)}button{background:var(--color-background-primary,#171b24);border-color:var(--color-border-primary,#3a4355)}.card{border-color:var(--color-border-primary,#3a4355)}pre,.notice,.badge{background:var(--color-background-secondary,#222936)}.badge[data-active=true]{background:#273458;color:#bdcaff}}
-  @media(max-width:430px){header{align-items:flex-start;flex-direction:column}.facts{grid-template-columns:70px minmax(0,1fr)}}
-  .task-details{margin:10px 0 14px}.task-details summary{color:var(--color-text-secondary,#637085)}
-  .markdown{font:14px/1.75 var(--font-sans,system-ui,-apple-system,sans-serif);overflow-wrap:anywhere;max-height:520px;overflow:auto;padding:4px 0 10px;margin:10px 0}
-  .markdown>:first-child{margin-top:0}.markdown>:last-child{margin-bottom:0}.markdown p{margin:0 0 12px}.markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6{line-height:1.4;margin:22px 0 10px;font-weight:650}.markdown h1{font-size:21px}.markdown h2{font-size:18px}.markdown h3{font-size:16px}.markdown h4,.markdown h5,.markdown h6{font-size:14px}
-  .markdown ul,.markdown ol{padding-left:24px;margin:10px 0 14px}.markdown li+li{margin-top:5px}.markdown li>p{margin:5px 0}.markdown a{color:var(--color-text-link,#3150cf);text-decoration:underline;text-underline-offset:2px}.markdown code{font:12px/1.65 ui-monospace,SFMono-Regular,monospace;background:var(--color-background-secondary,#f1f4fa);padding:2px 5px;border-radius:4px}.markdown pre{max-height:none;white-space:pre;overflow-x:auto;overflow-wrap:normal;margin:12px 0}.markdown pre code{background:none;padding:0;border-radius:0}.markdown blockquote{margin:12px 0;padding:2px 12px;border-left:3px solid var(--color-border-primary,#dce1eb);color:var(--color-text-secondary,#637085)}.markdown table{display:block;overflow-x:auto;border-collapse:collapse;margin:14px 0;font-size:12px}.markdown th,.markdown td{border:1px solid var(--color-border-primary,#dce1eb);padding:7px 10px;text-align:left}.markdown th{background:var(--color-background-secondary,#f1f4fa)}.markdown hr{border:0;border-top:1px solid var(--color-border-primary,#dce1eb);margin:18px 0}
-  @media(prefers-color-scheme:dark){.markdown code,.markdown th{background:var(--color-background-secondary,#222936)}.markdown pre code{background:none}.markdown a{color:var(--color-text-link,#bdcaff)}}
-  .terminal{border:1px solid #303c51;border-radius:10px;overflow:hidden;background:#111827;color:#e2e8f0;margin:12px 0}.terminal-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;background:#1e293b;color:#b8c5d9;font-size:12px}.terminal-bar span:before{content:'●';color:#94a3b8;margin-right:7px}.terminal[data-active=true] .terminal-bar span:before{color:#4ade80}.terminal-bar button{font-size:11px;color:#cbd5e1;background:#26354b;border-color:#46556e;padding:4px 8px}.terminal-viewport{height:360px;overflow:auto;padding:12px 14px;overscroll-behavior:contain;scrollbar-color:#475569 #111827;font:12px/1.65 ui-monospace,SFMono-Regular,monospace}.terminal-entry+.terminal-entry{margin-top:14px}.terminal-tool{color:#94a3b8;white-space:pre-wrap;overflow-wrap:anywhere}.terminal-entry[data-status=failed] .terminal-tool{color:#fca5a5}.terminal pre{background:transparent;color:inherit;border-radius:0;padding:0;margin:3px 0 0;max-height:none;overflow:visible;font:inherit}.terminal .terminal-command{color:#86efac}.terminal-empty{color:#94a3b8}
+/* SEEKWING_STYLES */
 </style>
 </head>
 <body>
-<header><div class="brand"><span class="mark" aria-hidden="true">W</span><div><h1>SeekWing</h1><div class="sub">委派执行 · Codex 核验 · v0.4.4</div></div></div><div class="actions"><button id="back" hidden>任务列表</button><button id="refresh" disabled>刷新</button><label><input id="auto" type="checkbox" checked>自动刷新</label></div></header>
-<p id="scope" class="muted"></p><div id="error" role="alert"></div>
-<form id="bind" class="actions" hidden><label for="run">任务编号</label><input id="run" placeholder="sw-…" aria-label="任务编号" style="font:inherit;padding:7px;border:1px solid #dce1eb;border-radius:8px;min-width:280px"><button>查看输出</button><span class="muted">也可点击刷新查看本聊天任务</span></form>
-<main id="tasks" aria-live="polite"><p class="empty">等待任务数据…</p></main>
-<footer id="foot">任务结束后仍需 Codex 独立检查文件、测试和验收条件。</footer>
+<header>
+  <div class="brand"><img class="mark" src="SEEKWING_LOGO" alt="" width="38" height="38"><div><h1>SeekWing</h1><span class="version">v0.5.0</span><div class="sub">委派执行 · Codex 核验</div></div></div>
+  <div class="actions"><button id="back" hidden>任务列表</button><button id="refresh" disabled>刷新</button><label class="auto-control"><input id="auto" type="checkbox" checked>实时同步</label></div>
+</header>
+<p id="scope" class="muted" hidden></p><div id="error" role="alert"></div>
+<form id="bind" class="actions" hidden><label for="run">任务编号</label><input id="run" placeholder="sw-…" aria-label="任务编号"><button>查看输出</button><span class="muted">或刷新查看本聊天任务</span></form>
+<main id="tasks"><p class="empty">正在连接任务…</p></main>
+<div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
+<footer><span>执行结果由 Codex 独立核验</span><span id="foot">等待连接</span></footer>
 <script>
 /* SEEKWING_MARKDOWN */
 (() => {
   const el = id => document.getElementById(id);
-  const statuses = {starting:'启动中',running:'执行中',needs_attention:'等待处理',cancelling:'取消中',completed:'执行结束 · 待核验',incomplete:'未完成',failed:'失败',cancelled:'已取消',interrupted:'已中断'};
-  const active = task => ['starting','running','needs_attention','cancelling'].includes(task.status);
+  const statuses = seekwingMarkdown.taskStatuses;
+  const active = seekwingMarkdown.isActive;
   const validRun = value => typeof value === 'string' && /^sw-[0-9a-f-]{36}$/.test(value);
   const liveQuery = runId => ({name:'get_task',arguments:{runId,outputTail:true}});
-  let ready = false, busy = false, query, listQuery, snapshot, timer, rpcId = 0, hostOrigin, version = 0, toolName, latestInput;
-  let logRun, terminalView;
-  const detailsOpen=new Map(), toolsOpen=new Map();
+  let ready = false, busy = false, readFailed = false, query, listQuery, snapshot, timer, rpcId = 0, hostOrigin, version = 0, toolName, latestInput;
+  const views = new Map();
   const pending = new Map();
   const node = (tag, text, cls) => { const n = document.createElement(tag); if(text !== undefined) n.textContent = String(text); if(cls) n.className = cls; return n; };
+  const ownershipNotice = node('p',undefined,'notice'), emptyState = node('p','这个聊天还没有委派任务。派发后，进度和回复会显示在这里。','empty');
   const send = message => window.parent.postMessage({jsonrpc:'2.0',...message}, hostOrigin && hostOrigin !== 'null' ? hostOrigin : '*');
   function request(method, params) {
     return new Promise((resolve,reject) => {
@@ -44,73 +39,42 @@
       pending.set(id,{resolve,reject,timeout}); send({id,method,params});
     });
   }
-  function error(e) { clearTimeout(timer); el('error').textContent = e?.message || String(e); }
+  function error(e) { readFailed=true;clearTimeout(timer);el('error').textContent = e?.message || String(e);el('foot').textContent='同步中断 · 点击刷新重试'; }
   function setQuery(next) { if(JSON.stringify(query)!==JSON.stringify(next)){query=next;version++;} }
   function schedule() {
     clearTimeout(timer);
     const rows = snapshot?.tasks || (snapshot?.runId ? [snapshot] : []);
-    if(ready && query && !busy && !document.hidden && el('auto').checked && rows.some(active)) timer = setTimeout(refresh, 500);
+    if(ready && query && !busy && !readFailed && !document.hidden && el('auto').checked && rows.some(active)) timer = setTimeout(refresh, 500);
   }
-  function fact(dl, title, value) { dl.append(node('dt',title),node('dd',value || '未知')); }
+  function hostContext(context) {
+    if(context?.theme === 'light' || context?.theme === 'dark') document.documentElement.dataset.theme = context.theme;
+  }
   function render(data) {
-    const oldOutput=el('tasks').querySelector('[aria-label="代理输出（未经独立核验）"]');
-    const oldScroll=oldOutput?.scrollTop || 0;
-    const sameOutput=!!data.runId && snapshot?.runId===data.runId;
-    const outputAtEnd=!oldOutput || !sameOutput || oldOutput.scrollHeight-oldOutput.clientHeight-oldScroll<40;
-    for(const detail of el('tasks').querySelectorAll('details[data-run-id]')){
-      const state=detail.className==='task-details'?detailsOpen:toolsOpen;
-      state.set(detail.dataset.runId,detail.open);if(state.size>100)state.delete(state.keys().next().value);
-    }
-    snapshot = data; el('tasks').replaceChildren();
-    el('bind').hidden=true;
-    const rows = data.tasks || (data.runId ? [data] : []);
-    el('scope').textContent = data.scope === 'current' ? '本聊天派发的任务' : data.scope === 'all' ? '本机全部任务' : '单个运行记录';
-    if(data.ownershipWarning) el('tasks').append(node('p',data.ownershipWarning,'notice'));
-    if(!rows.length) el('tasks').append(node('p','暂无符合条件的任务','empty'));
+    snapshot = data;el('bind').hidden=true;
+    const rows = data.tasks || (data.runId ? [data] : []), children = [], visibleViews = [];
+    el('scope').hidden = !data.tasks;
+    el('scope').textContent = data.scope === 'all' ? '本机全部任务' : '本聊天派发的任务';
+    if(data.ownershipWarning){ownershipNotice.textContent=data.ownershipWarning;children.push(ownershipNotice);}
+    if(!rows.length)children.push(emptyState);
     for(const task of rows) {
-      const card = node('article',undefined,'card'), head = node('div',undefined,'row');
-      const badge = node('span',statuses[task.status] || task.status,'badge'); badge.dataset.active = String(active(task));
-      head.append(node('h2', task.title || `${task.backend || 'DeepSeek'} task`),badge);card.append(head);
-      const details = node('details',undefined,'task-details');details.dataset.runId=task.runId;
-      details.open=detailsOpen.get(task.runId) || false;
-      const dl = node('dl',undefined,'facts');
-      fact(dl,'执行方',`${task.backend === 'grok' ? 'Grok' : 'DeepSeek'} · ${task.sessionMode || 'background'}`);
-      fact(dl,'权限',task.permissionMode === 'workspace-write' ? '可编辑工作目录' : '只读');
-      fact(dl,'运行编号',task.runId); fact(dl,'来源聊天',task.origin?.threadId || '未知（旧任务或宿主未提供）');
-      if(task.submittedBy?.threadId && task.submittedBy.threadId !== task.origin?.threadId) fact(dl,'本轮发起',task.submittedBy.threadId);
-      fact(dl,'工作目录',task.workspace);
-      if(task.sessionId) fact(dl,'原生会话',task.sessionId);
-      if(task.modelValue) fact(dl,'模型',task.modelValue);
-      details.append(node('summary','任务详情'),dl);card.append(details);
-      if(data.tasks) {
-        const button=node('button','查看进度和输出');button.onclick=()=>load(liveQuery(task.runId));card.append(button);
-      } else {
-        const calls=Array.isArray(task.toolCalls)?task.toolCalls:[];
-        const current=calls.filter(call=>['pending','in_progress'].includes(call.status)).at(-1);
-        if(current && active(task))card.append(node('p',`正在执行：${current.title || current.toolCallId || '工具调用'}`,'notice'));
-        if(task.status === 'needs_attention') card.append(node('p',task.desktopAttention || '存在待处理权限请求。请在聊天中检查具体操作并处理；本卡片不会自动批准。','notice'));
-        for(const field of ['error','cleanupError','persistenceError']) if(task[field]) card.append(node('p',task[field],'notice'));
-        const out=node('div',undefined,'markdown');out.setAttribute('aria-label','代理输出（未经独立核验）');
-        out.innerHTML=seekwingMarkdown.render(task.output || '暂无输出');card.append(out);
-        if(task.outputTruncated) card.append(node('p','输出已达到保存上限；请结合文件及工具证据核查。','notice'));
-        const paging=node('div',undefined,'actions');
-        if(task.outputOffset > 0) {const b=node('button','上一页输出');b.onclick=()=>load({name:'get_task',arguments:{runId:task.runId,outputOffset:Math.max(0,task.outputOffset-12000)}});paging.append(b);}
-        if(task.outputOffset > 0) {const b=node('button','返回输出开头');b.onclick=()=>load({name:'get_task',arguments:{runId:task.runId}});paging.append(b);}
-        if(task.nextOutputOffset != null) {const b=node('button','下一页输出');b.onclick=()=>load({name:'get_task',arguments:{runId:task.runId,outputOffset:task.nextOutputOffset}});paging.append(b);}
-        const live=node('button',query?.arguments.outputTail?(active(task)?'正在跟随最新输出':'已显示最新输出'):'跟随最新输出');live.disabled=!!query?.arguments.outputTail;live.onclick=()=>load(liveQuery(task.runId));paging.append(live);
-        card.append(paging);
-        if(logRun!==task.runId){logRun=task.runId;terminalView=seekwingMarkdown.createTerminal(document);}
-        card.append(node('h3','实时执行流'),terminalView.element);
-        if(task.toolCallsTruncated)card.append(node('p','工具记录较多，仅保留近期记录；新输出会继续显示。','muted'));
-        if(calls.length) {const raw=node('details',undefined,'tool-evidence');raw.dataset.runId=task.runId;raw.open=toolsOpen.get(task.runId) || false;raw.append(node('summary',`最近工具记录（${task.toolCallCount} 次）`),node('pre',JSON.stringify(calls,null,2)));card.append(raw);}
-        if(task.status === 'completed') card.append(node('p','执行方已结束本轮。验收结果以 Codex 独立核验为准。','notice'));
+      const key = (data.tasks ? 'list:' : 'task:') + task.runId;
+      let view = views.get(key);
+      if(!view) {
+        view = seekwingMarkdown.createTaskView(document,{list:!!data.tasks,renderMarkdown:seekwingMarkdown.render,load,liveQuery});
+        views.set(key,view);
       }
-      el('tasks').append(card);
-      if(!data.tasks)terminalView.update(task);
-      if(!data.tasks){const out=card.querySelector('[aria-label="代理输出（未经独立核验）"]');out.scrollTop=query?.arguments.outputTail && outputAtEnd?out.scrollHeight:sameOutput?oldScroll:0;}
+      children.push(view.element);
+      visibleViews.push([view,task]);
     }
+    const current = [...el('tasks').children];
+    if(current.length !== children.length || children.some((child,index)=>child !== current[index]))el('tasks').replaceChildren(...children);
+    for(const [view,task] of visibleViews)view.update(task,query);
+    for(const [key,view] of views){if(views.size<=100)break;if(!children.includes(view.element))views.delete(key);}
     el('back').hidden = !!data.tasks || !listQuery;
-    el('foot').textContent = `更新于 ${new Date().toLocaleTimeString()} · ${rows.some(active)?'每 0.5 秒同步本地 CLI 事件':rows.length?'任务已结束':'暂无任务'} · 执行结束不代表验收通过。`;
+    const announcement = rows.map(task=>(task.title || '任务') + '：' + (statuses[task.status] || task.status)).join('；');
+    if(el('announcement').textContent !== announcement)el('announcement').textContent = announcement;
+    el('foot').textContent = readFailed ? '同步中断 · 点击刷新重试' : `${rows.some(active)?(el('auto').checked?'实时同步':'同步已暂停'):rows.length?'已同步':'暂无任务'} · ${new Date().toLocaleTimeString()}`;
+    el('foot').title = '活动任务每 0.5 秒同步本地 CLI 事件；暂停同步不影响任务执行。';
     schedule();
   }
   function receive(response, fromHost = false) {
@@ -128,7 +92,7 @@
     } else if(!query || query.name !== 'get_task' || query.arguments.runId !== data.runId) {
       setQuery(liveQuery(data.runId));
     }
-    el('error').textContent='';render(data);
+    readFailed=false;el('error').textContent='';render(data);
     // A completed wait result may contain only the first output page. Read the
     // tail once even though there will be no active-task polling afterwards.
     if(fromHost && ready && query?.name==='get_task' && query.arguments.outputTail && data.nextOutputOffset != null)
@@ -139,11 +103,11 @@
     if(!ready)return;
     if(next)setQuery(next);
     if(busy)return;
-    clearTimeout(timer); busy=true;el('refresh').disabled=true;
+    clearTimeout(timer); busy=true;el('refresh').setAttribute('aria-busy','true');
     const current=query, selectedVersion=version;
     try {const result=await request('tools/call',current);if(selectedVersion===version && !receive(result))throw new Error('宿主返回了无法识别的任务数据，请刷新重试。');}
     catch(e){if(selectedVersion===version){error(e);return;}}
-    finally{busy=false;el('refresh').disabled=!ready;}
+    finally{busy=false;el('refresh').removeAttribute('aria-busy');el('refresh').disabled=!ready;}
     if(selectedVersion!==version && query!==current){void load();return;}
     schedule();
   }
@@ -163,6 +127,7 @@
   }
   function globals(value) {
     if(!value || typeof value!=='object')return;
+    hostContext(value);
     const metadata=value.toolResponseMetadata;
     const response=metadata?.mcp_tool_result ?? metadata?.call_tool_result ?? value.toolOutput;
     if(response)receive(response,true);
@@ -170,7 +135,7 @@
   }
   el('refresh').onclick=refresh;el('back').onclick=()=>listQuery && load(listQuery);
   el('bind').onsubmit=event=>{event.preventDefault();const id=el('run').value.trim();if(!validRun(id)){error(new Error('请填写有效的 sw- 任务编号。'));return;}void load(liveQuery(id));};
-  el('auto').onchange=schedule;document.addEventListener('visibilitychange',schedule);
+  el('auto').onchange=()=>{if(snapshot)render(snapshot);else schedule();};document.addEventListener('visibilitychange',schedule);
   window.addEventListener('pagehide',()=>{clearTimeout(timer);for(const p of pending.values()){clearTimeout(p.timeout);p.reject(new Error('视图已关闭'));}pending.clear();});
   window.addEventListener('message',event=>{
     if(event.source!==window.parent || (hostOrigin && event.origin!==hostOrigin)) return;
@@ -181,6 +146,7 @@
       if(msg.error)p.reject(new Error(msg.error.message || '宿主请求失败'));else p.resolve(msg.result);
     } else if(msg.method==='ui/notifications/tool-result') {try{receive(msg.params,true);}catch(e){error(e);}}
     else if(msg.method==='ui/notifications/tool-input') {input(msg.params);}
+    else if(msg.method==='ui/notifications/host-context-changed') {hostContext(msg.params);}
     else if(msg.method==='ui/resource-teardown') {clearTimeout(timer);ready=false;if(msg.id!==undefined)send({id:msg.id,result:{}});}
   });
   window.addEventListener('openai:set_globals',event=>{try{globals(event.detail?.globals);}catch(e){error(e);}});
@@ -191,8 +157,9 @@
   };
   if(typeof ResizeObserver !== 'undefined') new ResizeObserver(resize).observe(document.body);
   if(window.parent===window){error(new Error('此卡片需要支持 MCP Apps 的宿主。仍可通过 SeekWing 工具查询任务。'));return;}
-  request('ui/initialize',{appInfo:{name:'seekwing-task-board',version:'0.4.4'},appCapabilities:{},protocolVersion:'2026-01-26'})
+  request('ui/initialize',{appInfo:{name:'seekwing-task-board',version:'0.5.0'},appCapabilities:{},protocolVersion:'2026-01-26'})
     .then(result=>{
+      hostContext(result?.hostContext);
       toolName=result?.hostContext?.toolInfo?.tool?.name;
       ready=true;el('refresh').disabled=false;
       send({method:'ui/notifications/initialized',params:{}});

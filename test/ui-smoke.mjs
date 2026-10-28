@@ -48,8 +48,8 @@ try {
   const frame = page.frameLocator('iframe');
   await frame.getByText('本聊天派发的任务', { exact: true }).waitFor();
   assert.equal(await frame.locator('#tasks img').count(), 0, 'Worker text must never become HTML');
-  await frame.getByRole('button', { name: '查看进度和输出' }).click();
-  await frame.getByText('单个运行记录', { exact: true }).waitFor();
+  await frame.getByRole('button', { name: '查看输出', exact: true }).click();
+  await frame.getByRole('heading', { name: '执行过程', exact: true }).waitFor();
   const before = called.length;
   await c.call('cancel_task', { runId: run.runId });
   await frame.getByText('已取消', { exact: true }).waitFor({ timeout: 12000 });
@@ -59,9 +59,9 @@ try {
   const large = await c.call('start_task', { title: '翻页与复核状态测试', workspace, instruction: 'LONG' });
   await finished(c, large.runId);
   await send(await c.client.callTool({ name: 'get_task', arguments: { runId: large.runId } }));
-  await frame.getByRole('button', { name: '返回输出开头' }).click();
-  await frame.getByRole('button', { name: '下一页输出' }).click();
-  await frame.getByRole('button', { name: '返回输出开头' }).waitFor();
+  await frame.getByRole('button', { name: '回到开头', exact: true }).click();
+  await frame.getByRole('button', { name: '下一页', exact: true }).click();
+  await frame.getByRole('button', { name: '回到开头', exact: true }).waitFor();
   assert.match(await frame.locator('.badge').innerText(), /待核验/);
   assert.equal(await frame.locator('#error').innerText(), '');
   if(process.env.SEEKWING_UI_SCREENSHOT) await page.screenshot({ path: process.env.SEEKWING_UI_SCREENSHOT });

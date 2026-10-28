@@ -8,6 +8,8 @@
 
 SeekWing lets Codex assign scoped work to DeepSeek Harness or Grok, wait for results, continue the same session with corrections, and independently check files and tests. **Seek** comes from DeepSeek; **Wing** is your coding wingman.
 
+**v0.5.0 refines the task experience:** quieter typography and spacing, a focused reply area, light/dark themes, responsive panels, and expandable long replies. Background updates retain controls, disclosures and unchanged content, keeping the interface steady while the CLI works. [UI behavior and verification](docs/task-visibility.zh-CN.md#v050-界面与阅读体验打磨).
+
 **v0.4.4 adds a terminal-style live view:** commands and tool output grow in a shared console, with stable output nodes and pause/resume following. Active cards sync local ACP evidence every 0.5 seconds. This displays events emitted by the CLI; it does not mirror its full native TUI or simulate token streaming.
 
 **v0.4.3 renders Markdown replies:** headings, lists, tables and code blocks are formatted directly. Runtime metadata is collapsed under task details, and refresh preserves disclosure and reading positions. The renderer is bundled locally with raw HTML disabled.

@@ -9,7 +9,12 @@ export async function buildTaskBoard() {
     platform: 'browser', target: 'es2022', format: 'iife', globalName: 'seekwingMarkdown',
     bundle: true, write: false, minify: true, legalComments: 'eof', metafile: true,
   });
-  const source = await readFile(new URL('../src/task-board.html', import.meta.url), 'utf8');
+  const [template, css, logo] = await Promise.all([
+    readFile(new URL('../src/task-board.html', import.meta.url), 'utf8'),
+    readFile(new URL('../src/task-board.css', import.meta.url), 'utf8'),
+    readFile(new URL('../assets/seekwing-logo.png', import.meta.url)),
+  ]);
+  const source = template.replace('/* SEEKWING_STYLES */', () => css).replace('SEEKWING_LOGO', () => 'data:image/png;base64,' + logo.toString('base64'));
   const marker = '/* SEEKWING_MARKDOWN */';
   if (!source.includes(marker)) throw new Error('Task card Markdown bundle marker is missing');
   // A literal closing script tag must not terminate the inline bundle early.
