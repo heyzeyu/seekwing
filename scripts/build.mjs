@@ -1,6 +1,9 @@
 import { build } from 'esbuild';
 import { chmod, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { buildTaskBoard } from './task-board.mjs';
+
+const taskBoard = await buildTaskBoard();
 
 const result = await build({
   entryPoints: ['src/cli.ts'],
@@ -10,6 +13,9 @@ const result = await build({
   format: 'esm',
   bundle: true,
   loader: { '.html': 'text' },
+  plugins: [{ name: 'task-board-markdown', setup(build) {
+    build.onLoad({ filter: /task-board\.html$/ }, () => ({ contents: taskBoard.html, loader: 'text' }));
+  } }],
   minify: true,
   legalComments: 'eof',
   metafile: true,
@@ -21,7 +27,7 @@ await build({ entryPoints: ['src/desktop-plugin.ts'], outfile: 'desktop/index.mj
 await writeFile('desktop/LICENSE', await readFile('LICENSE', 'utf8'));
 
 const packages = new Map();
-for (const input of Object.keys(result.metafile.inputs).filter((file) => file.includes('node_modules/'))) {
+for (const input of new Set([...Object.keys(result.metafile.inputs), ...Object.keys(taskBoard.metafile.inputs)].filter((file) => file.includes('node_modules/')))) {
   let dir = path.dirname(input);
   while (dir !== '.' && dir !== path.dirname(dir)) {
     try {

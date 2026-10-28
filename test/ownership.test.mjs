@@ -138,13 +138,17 @@ test('MCP task tools expose a self-contained read-only Apps resource with text f
   const c = await setup(t);
   const tools = (await c.client.listTools()).tools;
   const resourceUri = tools.find(t => t.name === 'start_task')._meta.ui.resourceUri;
-  assert.equal(resourceUri, 'ui://seekwing/tasks-v042.html');
+  assert.equal(resourceUri, 'ui://seekwing/tasks-v043.html');
   for(const name of ['list_tasks', 'get_task', 'wait_task', 'reply_task', 'cancel_task'])
     assert.equal(tools.find(t => t.name === name)._meta.ui.resourceUri, resourceUri);
   const resource = (await c.client.readResource({ uri: resourceUri })).contents[0];
   assert.equal(resource.mimeType, 'text/html;profile=mcp-app');
   assert.deepEqual(resource._meta.ui.csp.connectDomains, []);
   assert.match(resource.text, /ui\/initialize/);
+  assert.ok(!resource.text.includes('/* SEEKWING_MARKDOWN */'), 'Markdown parser must be bundled into the shipped resource');
+  assert.match(resource.text, /seekwingMarkdown/);
+  for(const uri of ['ui://seekwing/tasks-v042.html', 'ui://seekwing/tasks-v041.html', 'ui://seekwing/tasks.html'])
+    assert.equal((await c.client.readResource({uri})).contents[0].text,resource.text);
   assert.ok(!resource.text.includes('respond_to_permission'));
   const result = await c.client.callTool({ name: 'list_tasks', arguments: {} });
   assert.equal(result.content[0].type, 'text');

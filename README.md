@@ -8,6 +8,8 @@
 
 SeekWing lets Codex assign scoped work to DeepSeek Harness or Grok, wait for results, continue the same session with corrections, and independently check files and tests. **Seek** comes from DeepSeek; **Wing** is your coding wingman.
 
+**v0.4.3 renders Markdown replies:** headings, lists, tables and code blocks are formatted directly. Runtime metadata is collapsed under task details, and refresh preserves disclosure and reading positions. The renderer is bundled locally with raw HTML disabled.
+
 **v0.4.2 shows live execution logs:** visible replies, commands, tool status and text results appear without expanding raw JSON. Long sessions continue retaining recent tools beyond the first 100 calls. Verified with a real Grok command producing output while running.
 
 **v0.4.1 fixed empty task cards:** bind the run from tool input before completion, read compatible result formats, and follow the latest output every second. Reopen the card in a fresh chat after updating.

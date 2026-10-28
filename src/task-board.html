@@ -9,15 +9,21 @@
   *{box-sizing:border-box}body{margin:0;padding:18px}header,.actions,.row{display:flex;align-items:center;gap:10px}header{justify-content:space-between;margin-bottom:16px}.brand{display:flex;align-items:center;gap:10px}.mark{background:#4d6bfe;color:#fff;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;font-weight:800}h1{font-size:16px;margin:0}h2{font-size:15px;margin:0;overflow-wrap:anywhere}.sub,.muted{font-size:12px;color:var(--color-text-secondary,#637085)}.sub{margin-top:3px}.actions{flex-wrap:wrap}button{font:inherit;border:1px solid var(--color-border-primary,#dce1eb);background:var(--color-background-primary,#fff);color:inherit;border-radius:8px;padding:7px 11px;cursor:pointer}button:hover{border-color:#4d6bfe}button:focus-visible{outline:2px solid #4d6bfe;outline-offset:2px}button:disabled{opacity:.5;cursor:default}label{font-size:12px;display:flex;align-items:center;gap:4px}input{accent-color:#4d6bfe}.card{border:1px solid var(--color-border-primary,#e2e6ef);border-radius:12px;padding:14px;margin:10px 0}.row{justify-content:space-between;align-items:flex-start}.badge{font-size:11px;white-space:nowrap;background:var(--color-background-secondary,#f1f4fa);border-radius:6px;padding:4px 7px}.badge[data-active=true]{color:#3150cf;background:#edf1ff}.facts{display:grid;grid-template-columns:90px minmax(0,1fr);gap:7px 10px;margin:13px 0;font-size:12px}.facts dt{color:var(--color-text-secondary,#637085)}.facts dd{margin:0;overflow-wrap:anywhere}.notice{border-left:3px solid #4d6bfe;padding:8px 10px;background:var(--color-background-secondary,#f6f8fc);margin:12px 0;font-size:12px;line-height:1.6}pre{font:12px/1.65 ui-monospace,SFMono-Regular,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:350px;overflow:auto;background:var(--color-background-secondary,#f6f8fc);padding:12px;border-radius:8px}#error{color:#b42318;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}footer{font-size:11px;color:var(--color-text-secondary,#637085);margin-top:14px}details{margin-top:10px}summary{cursor:pointer;font-size:12px}.empty{padding:24px 0;text-align:center;color:var(--color-text-secondary,#637085)}[hidden]{display:none!important}
   @media(prefers-color-scheme:dark){:root{color:var(--color-text-primary,#e9edf5);background:var(--color-background-primary,#171b24)}button{background:var(--color-background-primary,#171b24);border-color:var(--color-border-primary,#3a4355)}.card{border-color:var(--color-border-primary,#3a4355)}pre,.notice,.badge{background:var(--color-background-secondary,#222936)}.badge[data-active=true]{background:#273458;color:#bdcaff}}
   @media(max-width:430px){header{align-items:flex-start;flex-direction:column}.facts{grid-template-columns:70px minmax(0,1fr)}}
+  .task-details{margin:10px 0 14px}.task-details summary{color:var(--color-text-secondary,#637085)}
+  .markdown{font:14px/1.75 var(--font-sans,system-ui,-apple-system,sans-serif);overflow-wrap:anywhere;max-height:520px;overflow:auto;padding:4px 0 10px;margin:10px 0}
+  .markdown>:first-child{margin-top:0}.markdown>:last-child{margin-bottom:0}.markdown p{margin:0 0 12px}.markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6{line-height:1.4;margin:22px 0 10px;font-weight:650}.markdown h1{font-size:21px}.markdown h2{font-size:18px}.markdown h3{font-size:16px}.markdown h4,.markdown h5,.markdown h6{font-size:14px}
+  .markdown ul,.markdown ol{padding-left:24px;margin:10px 0 14px}.markdown li+li{margin-top:5px}.markdown li>p{margin:5px 0}.markdown a{color:var(--color-text-link,#3150cf);text-decoration:underline;text-underline-offset:2px}.markdown code{font:12px/1.65 ui-monospace,SFMono-Regular,monospace;background:var(--color-background-secondary,#f1f4fa);padding:2px 5px;border-radius:4px}.markdown pre{max-height:none;white-space:pre;overflow-x:auto;overflow-wrap:normal;margin:12px 0}.markdown pre code{background:none;padding:0;border-radius:0}.markdown blockquote{margin:12px 0;padding:2px 12px;border-left:3px solid var(--color-border-primary,#dce1eb);color:var(--color-text-secondary,#637085)}.markdown table{display:block;overflow-x:auto;border-collapse:collapse;margin:14px 0;font-size:12px}.markdown th,.markdown td{border:1px solid var(--color-border-primary,#dce1eb);padding:7px 10px;text-align:left}.markdown th{background:var(--color-background-secondary,#f1f4fa)}.markdown hr{border:0;border-top:1px solid var(--color-border-primary,#dce1eb);margin:18px 0}
+  @media(prefers-color-scheme:dark){.markdown code,.markdown th{background:var(--color-background-secondary,#222936)}.markdown pre code{background:none}.markdown a{color:var(--color-text-link,#bdcaff)}}
 </style>
 </head>
 <body>
-<header><div class="brand"><span class="mark" aria-hidden="true">W</span><div><h1>SeekWing</h1><div class="sub">委派执行 · Codex 核验 · v0.4.2</div></div></div><div class="actions"><button id="back" hidden>任务列表</button><button id="refresh" disabled>刷新</button><label><input id="auto" type="checkbox" checked>自动刷新</label></div></header>
+<header><div class="brand"><span class="mark" aria-hidden="true">W</span><div><h1>SeekWing</h1><div class="sub">委派执行 · Codex 核验 · v0.4.3</div></div></div><div class="actions"><button id="back" hidden>任务列表</button><button id="refresh" disabled>刷新</button><label><input id="auto" type="checkbox" checked>自动刷新</label></div></header>
 <p id="scope" class="muted"></p><div id="error" role="alert"></div>
 <form id="bind" class="actions" hidden><label for="run">任务编号</label><input id="run" placeholder="sw-…" aria-label="任务编号" style="font:inherit;padding:7px;border:1px solid #dce1eb;border-radius:8px;min-width:280px"><button>查看输出</button><span class="muted">也可点击刷新查看本聊天任务</span></form>
 <main id="tasks" aria-live="polite"><p class="empty">等待任务数据…</p></main>
 <footer id="foot">任务结束后仍需 Codex 独立检查文件、测试和验收条件。</footer>
 <script>
+/* SEEKWING_MARKDOWN */
 (() => {
   const el = id => document.getElementById(id);
   const statuses = {starting:'启动中',running:'执行中',needs_attention:'等待处理',cancelling:'取消中',completed:'执行结束 · 待核验',incomplete:'未完成',failed:'失败',cancelled:'已取消',interrupted:'已中断'};
@@ -26,6 +32,7 @@
   const liveQuery = runId => ({name:'get_task',arguments:{runId,outputTail:true}});
   let ready = false, busy = false, query, listQuery, snapshot, timer, rpcId = 0, hostOrigin, version = 0, toolName, latestInput;
   let logRun;const logCalls=new Map();
+  const detailsOpen=new Map(), toolsOpen=new Map();
   const pending = new Map();
   const node = (tag, text, cls) => { const n = document.createElement(tag); if(text !== undefined) n.textContent = String(text); if(cls) n.className = cls; return n; };
   const send = message => window.parent.postMessage({jsonrpc:'2.0',...message}, hostOrigin && hostOrigin !== 'null' ? hostOrigin : '*');
@@ -74,7 +81,12 @@
   function render(data) {
     const oldOutput=el('tasks').querySelector('[aria-label="代理输出（未经独立核验）"]');
     const oldScroll=oldOutput?.scrollTop || 0;
-    const toolsOpen=el('tasks').querySelector('details')?.open || false;
+    const sameOutput=!!data.runId && snapshot?.runId===data.runId;
+    const outputAtEnd=!oldOutput || !sameOutput || oldOutput.scrollHeight-oldOutput.clientHeight-oldScroll<40;
+    for(const detail of el('tasks').querySelectorAll('details[data-run-id]')){
+      const state=detail.className==='task-details'?detailsOpen:toolsOpen;
+      state.set(detail.dataset.runId,detail.open);if(state.size>100)state.delete(state.keys().next().value);
+    }
     const oldLog=el('tasks').querySelector('[aria-label="执行日志"]');
     const logScroll=oldLog?.scrollTop || 0;
     const logAtEnd=!oldLog || oldLog.scrollHeight-oldLog.clientHeight-logScroll<40;
@@ -88,6 +100,8 @@
       const card = node('article',undefined,'card'), head = node('div',undefined,'row');
       const badge = node('span',statuses[task.status] || task.status,'badge'); badge.dataset.active = String(active(task));
       head.append(node('h2', task.title || `${task.backend || 'DeepSeek'} task`),badge);card.append(head);
+      const details = node('details',undefined,'task-details');details.dataset.runId=task.runId;
+      details.open=detailsOpen.get(task.runId) || false;
       const dl = node('dl',undefined,'facts');
       fact(dl,'执行方',`${task.backend === 'grok' ? 'Grok' : 'DeepSeek'} · ${task.sessionMode || 'background'}`);
       fact(dl,'权限',task.permissionMode === 'workspace-write' ? '可编辑工作目录' : '只读');
@@ -96,7 +110,7 @@
       fact(dl,'工作目录',task.workspace);
       if(task.sessionId) fact(dl,'原生会话',task.sessionId);
       if(task.modelValue) fact(dl,'模型',task.modelValue);
-      card.append(dl);
+      details.append(node('summary','任务详情'),dl);card.append(details);
       if(data.tasks) {
         const button=node('button','查看进度和输出');button.onclick=()=>load(liveQuery(task.runId));card.append(button);
       } else {
@@ -105,7 +119,8 @@
         if(current && active(task))card.append(node('p',`正在执行：${current.title || current.toolCallId || '工具调用'}`,'notice'));
         if(task.status === 'needs_attention') card.append(node('p',task.desktopAttention || '存在待处理权限请求。请在聊天中检查具体操作并处理；本卡片不会自动批准。','notice'));
         for(const field of ['error','cleanupError','persistenceError']) if(task[field]) card.append(node('p',task[field],'notice'));
-        const out=node('pre',task.output || '暂无输出');out.setAttribute('aria-label','代理输出（未经独立核验）');card.append(out);
+        const out=node('div',undefined,'markdown');out.setAttribute('aria-label','代理输出（未经独立核验）');
+        out.innerHTML=seekwingMarkdown.render(task.output || '暂无输出');card.append(out);
         if(task.outputTruncated) card.append(node('p','输出已达到保存上限；请结合文件及工具证据核查。','notice'));
         const paging=node('div',undefined,'actions');
         if(task.outputOffset > 0) {const b=node('button','上一页输出');b.onclick=()=>load({name:'get_task',arguments:{runId:task.runId,outputOffset:Math.max(0,task.outputOffset-12000)}});paging.append(b);}
@@ -132,11 +147,11 @@
           Promise.resolve().then(()=>{log.scrollTop=logAtEnd?log.scrollHeight:logScroll;});
           if(task.toolCallsTruncated)card.append(node('p','工具记录较多，仅保留近期记录；新输出会继续显示。','muted'));
         }
-        if(calls.length) {const details=node('details');details.open=toolsOpen;details.append(node('summary',`最近工具记录（${task.toolCallCount} 次）`),node('pre',JSON.stringify(calls,null,2)));card.append(details);}
+        if(calls.length) {const raw=node('details',undefined,'tool-evidence');raw.dataset.runId=task.runId;raw.open=toolsOpen.get(task.runId) || false;raw.append(node('summary',`最近工具记录（${task.toolCallCount} 次）`),node('pre',JSON.stringify(calls,null,2)));card.append(raw);}
         if(task.status === 'completed') card.append(node('p','执行方已结束本轮。验收结果以 Codex 独立核验为准。','notice'));
       }
       el('tasks').append(card);
-      if(!data.tasks){const out=card.querySelector('[aria-label="代理输出（未经独立核验）"]');out.scrollTop=query?.arguments.outputTail?out.scrollHeight:oldScroll;}
+      if(!data.tasks){const out=card.querySelector('[aria-label="代理输出（未经独立核验）"]');out.scrollTop=query?.arguments.outputTail && outputAtEnd?out.scrollHeight:sameOutput?oldScroll:0;}
     }
     el('back').hidden = !!data.tasks || !listQuery;
     el('foot').textContent = `更新于 ${new Date().toLocaleTimeString()} · ${rows.some(active)?'每秒刷新':rows.length?'任务已结束':'暂无任务'} · 执行结束不代表验收通过。`;
@@ -220,7 +235,7 @@
   };
   if(typeof ResizeObserver !== 'undefined') new ResizeObserver(resize).observe(document.body);
   if(window.parent===window){error(new Error('此卡片需要支持 MCP Apps 的宿主。仍可通过 SeekWing 工具查询任务。'));return;}
-  request('ui/initialize',{appInfo:{name:'seekwing-task-board',version:'0.4.2'},appCapabilities:{},protocolVersion:'2026-01-26'})
+  request('ui/initialize',{appInfo:{name:'seekwing-task-board',version:'0.4.3'},appCapabilities:{},protocolVersion:'2026-01-26'})
     .then(result=>{
       toolName=result?.hostContext?.toolInfo?.tool?.name;
       ready=true;el('refresh').disabled=false;
