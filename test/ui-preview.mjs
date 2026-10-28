@@ -81,7 +81,8 @@ if(live){
       const key=JSON.stringify({...value,at:undefined});if(key!==last){console.log(JSON.stringify(value));observations.push(value);last=key;}
       if(['completed','failed','cancelled','incomplete'].includes(t.status)){
         clearInterval(observation);
-        await import('node:fs/promises').then(fs=>fs.writeFile(path.join(repo,'../../work/seekwing-live-card-observation-20261026.json'),JSON.stringify({runId,observations},null,2)));
+        const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai'}).format(new Date()).replaceAll('-','');
+        await import('node:fs/promises').then(fs=>fs.writeFile(path.join(repo,`../../work/seekwing-live-card-observation-${day}.json`),JSON.stringify({runId,observations},null,2)));
       }
     }catch(error){console.error(String(error));}finally{checking=false;}
   },500);

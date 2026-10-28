@@ -33,7 +33,7 @@ function harness({globals}={}){
   const calls=()=>sent.filter(m=>m.method==='tools/call');
   return{elements,sent,timers,send,reply,calls,
     init:async()=>{reply(sent[0],{hostContext:{toolInfo:{tool:{name:'wait_task'}}}});await flush();},
-    poll:async()=>{const entry=[...timers].find(([,t])=>t.ms===1000);assert.ok(entry,'active task should schedule a one-second refresh');timers.delete(entry[0]);entry[1].fn();await flush();},
+    poll:async()=>{const entry=[...timers].find(([,t])=>t.ms===500);assert.ok(entry,'active task should schedule a half-second refresh');timers.delete(entry[0]);entry[1].fn();await flush();},
     globals:value=>listeners.get('openai:set_globals')({detail:{globals:value}})};
 }
 const output=h=>h.elements.tasks.querySelector('[aria-label="代理输出（未经独立核验）"]');
@@ -80,9 +80,9 @@ test('refresh without task data lists current-chat tasks and never guesses an al
 test('completed tasks stop polling, permission waits remain observable and errors recover manually',async()=>{
   const h=harness();await h.init();h.send('ui/notifications/tool-input',{arguments:{runId:id}});await flush();
   h.reply(h.calls()[0],{isError:true,content:[{type:'text',text:'temporary read error'}]});await flush();
-  assert.match(h.elements.error.textContent,/temporary read error/);assert.ok(![...h.timers.values()].some(t=>t.ms===1000));
+  assert.match(h.elements.error.textContent,/temporary read error/);assert.ok(![...h.timers.values()].some(t=>t.ms===500));
   h.elements.refresh.onclick();await flush();h.reply(h.calls()[1],{structuredContent:task({status:'needs_attention'})});await flush();await h.poll();
-  h.reply(h.calls()[2],{structuredContent:task({status:'completed'})});await flush();assert.ok(![...h.timers.values()].some(t=>t.ms===1000));
+  h.reply(h.calls()[2],{structuredContent:task({status:'completed'})});await flush();assert.ok(![...h.timers.values()].some(t=>t.ms===500));
 });
 
 test('late reads from a previous task cannot replace the newly selected task',async()=>{
@@ -99,7 +99,7 @@ test('a completed host result with more pages fetches its tail once without acti
   h.send('ui/notifications/tool-result',{structuredContent:task({status:'completed',output:'old first page',outputLength:30000,nextOutputOffset:12000})});await flush();
   assert.equal(h.calls().length,1);assert.equal(h.calls()[0].params.arguments.outputTail,true);
   h.reply(h.calls()[0],{structuredContent:task({status:'completed',output:'final output',outputOffset:18000,outputLength:30000,outputTail:true})});await flush();
-  assert.equal(output(h).textContent.trimEnd(),'final output');assert.ok(![...h.timers.values()].some(t=>t.ms===1000));
+  assert.equal(output(h).textContent.trimEnd(),'final output');assert.ok(![...h.timers.values()].some(t=>t.ms===500));
 });
 
 function domText(element){return element.textContent;}
@@ -195,4 +195,56 @@ test('partial Markdown updates render correctly and refresh preserves a reader s
   output(h).scrollTop=650;
   await h.poll();h.reply(h.calls()[1],{structuredContent:task({output:'## 发现\n\n最后一段'})});await flush();
   assert.equal(output(h).scrollTop,1000);
+});
+
+test('the terminal retains its nodes while command output grows, without replaying earlier text',async()=>{
+  const h=harness();await h.init();
+  const call={toolCallId:'shell',title:'Print lines',status:'in_progress',rawInput:{command:'python3 -u test.py'},rawOutput:'line one\n'};
+  h.send('ui/notifications/tool-result',{structuredContent:task({toolCalls:[call]})});
+  const log=h.elements.tasks.querySelector('[aria-label="执行日志"]');
+  const entry=log.querySelector('.terminal-entry'),command=entry.querySelector('.terminal-command'),stdout=entry.querySelector('.terminal-output');
+  const firstText=stdout.firstChild;
+  await h.poll();h.reply(h.calls()[0],{structuredContent:task({toolCalls:[{...call,rawOutput:'line one\nline two\n'}]})});await flush();
+  assert.equal(h.elements.tasks.querySelector('[aria-label="执行日志"]'),log);
+  assert.equal(log.querySelector('.terminal-entry'),entry);assert.equal(log.querySelector('.terminal-command'),command);
+  assert.equal(log.querySelector('.terminal-output'),stdout);assert.equal(stdout.textContent,'line one\nline two\n');
+  assert.equal(stdout.firstChild,firstText,'Earlier stdout text must remain in place while new text is appended');
+  assert.equal(log.querySelectorAll('.terminal-command').length,1);assert.match(command.textContent,/python3 -u test.py/);
+});
+
+test('terminal scrolling pauses following without pausing reads and can resume following',async()=>{
+  const h=harness();await h.init();
+  const call={toolCallId:'shell',status:'in_progress',rawOutput:'line one'};
+  h.send('ui/notifications/tool-result',{structuredContent:task({toolCalls:[call]})});
+  const log=h.elements.tasks.querySelector('[aria-label="执行日志"]');
+  const follow=h.elements.tasks.querySelector('.terminal-bar button');
+  log.scrollTop=120;log.onscroll();assert.equal(follow.textContent,'跟随最新');
+  await h.poll();h.reply(h.calls()[0],{structuredContent:task({toolCalls:[{...call,rawOutput:'line one\nline two'}]})});await flush();
+  assert.equal(log.scrollTop,120);assert.match(log.textContent,/line two/);
+  follow.onclick();assert.equal(log.scrollTop,1000);assert.equal(follow.textContent,'暂停跟随');
+  follow.onclick();assert.equal(follow.textContent,'跟随最新');
+  await h.poll();h.reply(h.calls()[1],{structuredContent:task({toolCalls:[{...call,rawOutput:'line one\nline two\nline three'}]})});await flush();
+  assert.match(log.textContent,/line three/);assert.equal(follow.textContent,'跟随最新');
+});
+
+test('terminal status follows the native turn and untrusted CLI text remains plain text',async()=>{
+  const h=harness();await h.init();
+  const call={toolCallId:'shell',status:'completed',title:'<img src=x onerror=alert(1)>',rawOutput:'<script>alert(2)</script>'};
+  h.send('ui/notifications/tool-result',{structuredContent:task({toolCalls:[call]})});
+  assert.match(h.elements.tasks.querySelector('.terminal-bar').textContent,/Grok CLI · 执行中/);
+  assert.equal(h.elements.tasks.querySelector('.terminal img,.terminal script'),null);
+  assert.match(h.elements.tasks.querySelector('.terminal-output').textContent,/<script>/);
+  h.send('ui/notifications/tool-result',{structuredContent:task({status:'completed',toolCalls:[call]})});
+  assert.match(h.elements.tasks.querySelector('.terminal-bar').textContent,/已结束 · 待核验/);
+});
+
+test('terminal history stays bounded while retaining an active tool and the newest calls',async()=>{
+  const h=harness();await h.init();
+  const calls=[{toolCallId:'active',status:'in_progress',rawInput:{command:'long-running'}}];
+  for(let i=0;i<125;i++)calls.push({toolCallId:'tool-'+i,status:'completed',rawOutput:'output-'+i});
+  h.send('ui/notifications/tool-result',{structuredContent:task({toolCalls:calls})});
+  const log=h.elements.tasks.querySelector('[aria-label="执行日志"]');
+  assert.equal(log.querySelectorAll('.terminal-entry').length,100);
+  assert.ok(log.querySelector('[data-tool-call-id="active"]'));
+  assert.match(log.textContent,/output-124/);assert.equal(log.querySelector('[data-tool-call-id="tool-0"]'),null);
 });

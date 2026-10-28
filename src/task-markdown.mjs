@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it';
+export { createTerminal } from './task-terminal.mjs';
 
 // Model output is untrusted. Keep raw HTML disabled, use the parser's escaping,
 // and restrict links to explicit web/mail URLs. No remote assets are fetched.

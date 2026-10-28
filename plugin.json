@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "seekwing",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "DeepSeek and Grok subagents for Codex, with persistent ACP tasks and independent review.",
   "extensions": {
     "com.openai": {
